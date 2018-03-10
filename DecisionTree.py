@@ -37,7 +37,7 @@ class DecisionTree:
     splitStd = "splitStd"
 
     # set log level
-    def __init__(self, splitMethod=splitStd, minGiniReduction=0.01):
+    def __init__(self, splitMethod=splitStd, minGiniReduction=0.01, maxDepth=15, minNodeSize=20, minGini=0.05):
         self.node = None
 
         if splitMethod == DecisionTree.splitStd:
@@ -52,6 +52,10 @@ class DecisionTree:
         if minGiniReduction <= 0:
             raise ValueError("minGiniReduction must be greater than 0")
         self.minGiniReduction = minGiniReduction
+
+        self.maxDepth = maxDepth
+        self.minNodeSize = minNodeSize
+        self.minGini = minGini
 
     def __str__(self):
         if self.node is None:
@@ -158,11 +162,11 @@ class Node:
         Function that returns True if the node should be a leaf and, therefore, should not be splitted
         :return: True or False
         """
-        if self.nInst < 20:
+        if self.nInst < self.parentTree.minNodeSize:
             return True
-        elif self.gini < 0.05:
+        elif self.gini < self.parentTree.minGini:
             return True
-        elif self.depth > 15:
+        elif self.depth > self.parentTree.maxDepth:
             return True
         else:
             return False
