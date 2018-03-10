@@ -37,8 +37,21 @@ class DecisionTree:
     splitStd = "splitStd"
 
     # set log level
-    def __init__(self):
+    def __init__(self, splitMethod=splitStd, minGiniReduction=0.01):
         self.node = None
+
+        if splitMethod == DecisionTree.splitStd:
+            self.splitMethod = Node.SplitStd()
+        elif splitMethod == DecisionTree.splitLR:
+            self.splitMethod = Node.SplitLr()
+        elif splitMethod == DecisionTree.splitPca:
+            self.splitMethod = Node.SplitPca()
+        else:
+            raise ValueError("Invalid splitMethod: " + splitMethod)
+
+        if minGiniReduction <= 0:
+            raise ValueError("minGiniReduction must be greater than 0")
+        self.minGiniReduction = minGiniReduction
 
     def __str__(self):
         if self.node is None:
@@ -46,18 +59,8 @@ class DecisionTree:
         else:
             return self.node.__str__()
 
-    def fit(self, X, y, splitMethodStr=splitStd):
-        if splitMethodStr == DecisionTree.splitStd:
-            splitMethod = Node.SplitStd()
-        elif splitMethodStr == DecisionTree.splitLR:
-            splitMethod = Node.SplitLr()
-        elif splitMethodStr == DecisionTree.splitPca:
-            splitMethod = Node.SplitPca()
-        else:
-            # Invalid split method
-            assert False
-
-        self.node = Node(X, y, splitMethod)
+    def fit(self, X, y):
+        self.node = Node(X, y, self)
         self.node.split()
 
     def predict(self, X):
@@ -67,7 +70,7 @@ class DecisionTree:
 # Should Node be an inner class of DecisionTree?
 
 class Node:
-    def __init__(self, X, y, splitMethod, depth=0):
+    def __init__(self, X, y, parentTree, depth=0):
         """
         :param X: Matrix with the data. Each row represents an individual (instance)
         :param y: Class values
@@ -77,7 +80,7 @@ class Node:
         self.X = X
         self.y = y # class should be 0, 1, 2, 3, ...
         self.depth = depth
-        self.splitMethod = splitMethod
+        self.parentTree = parentTree
         self.decisionFun = None
         self.sons = []
         # frequency of each class in that node
@@ -88,13 +91,14 @@ class Node:
         self.nInst = len(self.X)
         self.nAttr = len(self.X[0])
         self.gini = calcGini([self.freqClasses])
+        self.accuracy = max(self.freqClasses)/sum(self.freqClasses)
 
     def __str__(self):
         # La accuracy s'ha de generalitza per a datasets amb etiquetes diferents a True i False
-
+        # "{0:.2f}".format(a)
         strTree = 'size: ' + str(self.nInst) + '; Accuracy: ' + \
-                  str(max(self.freqClasses)/sum(self.freqClasses)) + \
-                  '; Gini: ' + str(calcGini([self.freqClasses])) + "; Predict: " + str(self.clss) + '\n'
+                  '{0:.2f}'.format(self.accuracy) + \
+                  '; Gini: ' + '{0:.2f}'.format(calcGini([self.freqClasses])) + "; Predict: " + str(self.clss) + '\n'
         # posar les funcions de accuracy i altres (recall, precision...) fora de la classe i
         # cridar-les en aquest print
         for i in range(len(self.sons)):
@@ -122,10 +126,10 @@ class Node:
 
         # Calculate the decision function using the split method of this node
         # The decision function is a function that given an instance it return in which son this instance should go
-        giniSons, nSubsets, self.decisionFun = self.splitMethod.split(self)
+        giniSons, nSubsets, self.decisionFun = self.parentTree.splitMethod.split(self)
 
         # Avoid spliting if we don't reduce the gini score
-        if giniSons + 0.01 >= self.gini:
+        if giniSons + self.parentTree.minGiniReduction >= self.gini:
             return
 
         # After setting the decision function, it performs the split physically. That mean it generated the new sons
@@ -175,9 +179,11 @@ class Node:
             dataSons[idSon]['X'].append(instance)
             dataSons[idSon]['y'].append(self.y[i])
 
+        # assert all(len(data['X']) > 0 for data in dataSons)
         # Create each new son if there's data for it
-        self.sons = [Node(dataSons[i]['X'], dataSons[i]['y'], self.splitMethod, self.depth + 1)
+        self.sons = [Node(dataSons[i]['X'], dataSons[i]['y'], self.parentTree, self.depth + 1)
                      for i in range(nSubsets) if len(dataSons[i]['X']) > 0]
+
 
     def _isNodeLeaf(self):
         return self.decisionFun is None
@@ -213,18 +219,16 @@ class Node:
             sortedAttr = sorted(((node.X[i][idxAttr], node.y[i]) for i in range(node.nInst)))
             distrPerBranch = [node.freqClasses.copy(), [0]*node.nClasses]
 
-            gini = node.gini
-            clss_ant = None
-            attr_ant = None
-            splitPoint = sortedAttr[0][1] - 0.01 # class of the first sorted instance
-            for (attr, clss) in sortedAttr:
-                distrPerBranch[0][clss] -= 1
-                distrPerBranch[1][clss] += 1
-                if clss_ant != clss and attr_ant != attr:
+            bestGini = math.inf
+            (attr_ant, clss_ant) = (sortedAttr[0][0], sortedAttr[0][1])
+            splitPoint = None
+            for (attr, clss) in sortedAttr[1:]:
+                distrPerBranch[0][clss_ant] -= 1
+                distrPerBranch[1][clss_ant] += 1
+                if attr_ant != attr:  # and class_ant != clss
                     newGini = calcGini(distrPerBranch)
-                    gini, splitPoint = min((newGini, attr), (gini, splitPoint))
-                clss_ant = clss
-                attr_ant = attr
+                    bestGini, splitPoint = min((newGini, (attr_ant+attr)/2), (bestGini, splitPoint))
+                (attr_ant, clss_ant) = (attr, clss)
 
             # TODO Instead of returning a lambda, I could return an object of class DecisionFunction that can bring more information about the split
-            return gini, lambda instance: instance[idxAttr] <= splitPoint
+            return bestGini, lambda instance: instance[idxAttr] <= splitPoint
