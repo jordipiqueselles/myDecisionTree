@@ -120,7 +120,6 @@ class Node:
             return self.clss
         else:
             idSon = self.decisionFun(x)
-            # TODO Sometimes, idSon is out of range
             return self.sons[idSon].predict(x)
 
     def split(self):
@@ -136,6 +135,7 @@ class Node:
 
         # Avoid spliting if we don't reduce the gini score
         if giniSons + self.parentTree.minGiniReduction >= self.gini:
+            self.decisionFun = None
             return
 
         # After setting the decision function, it performs the split physically. That mean it generated the new sons
@@ -185,10 +185,11 @@ class Node:
             dataSons[idSon]['X'].append(instance)
             dataSons[idSon]['y'].append(self.y[i])
 
-        # assert all(len(data['X']) > 0 for data in dataSons)
+        assert all(len(data['X']) > 0 for data in dataSons)
         # Create each new son if there's data for it
         self.sons = [Node(dataSons[i]['X'], dataSons[i]['y'], self.parentTree, self.depth + 1)
                      for i in range(nSubsets) if len(dataSons[i]['X']) > 0]
+        assert len(self.sons) >= 2
 
 
     def _isNodeLeaf(self):
