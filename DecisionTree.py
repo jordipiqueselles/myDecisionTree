@@ -7,6 +7,7 @@ from sklearn.linear_model import logistic
 import itertools as ittls
 import collections
 import logging as log
+import copy
 
 # Auxiliar functions #
 
@@ -119,6 +120,7 @@ class Node:
             return self.clss
         else:
             idSon = self.decisionFun(x)
+            # TODO Sometimes, idSon is out of range
             return self.sons[idSon].predict(x)
 
     def split(self):
@@ -199,28 +201,9 @@ class Node:
         def split(self, node):
             raise NotImplementedError("Should have implemented this")
 
-    class SplitPca(BaseSplit):
-        def split(self, node):
-            raise NotImplementedError("Should have implemented this")
-
-    class SplitLr(BaseSplit):
-        def split(self, node):
-            raise NotImplementedError("Should have implemented this")
-    
-    class SplitStd(BaseSplit):
-        def split(self, node):
-            bestGini = math.inf
-            bestDecisionFun = None
-            for idxAttr in range(node.nAttr):
-                # TODO call a different function according the type of the attribute (numeric or nominal)
-                gini, decisionFun = self._numericSplit(node, idxAttr)
-                bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
-            # TODO parametrize the number of subsets it returns
-            return bestGini, 2, bestDecisionFun
-
         @staticmethod
-        def _numericSplit(node, idxAttr):
-            sortedAttr = sorted(((node.X[i][idxAttr], node.y[i]) for i in range(node.nInst)))
+        def _numericSplit(X, y, idxAttr, node):
+            sortedAttr = sorted(((X[i][idxAttr], y[i]) for i in range(node.nInst)))
             distrPerBranch = [node.freqClasses.copy(), [0]*node.nClasses]
 
             bestGini = math.inf
@@ -236,3 +219,38 @@ class Node:
 
             # TODO Instead of returning a lambda, I could return an object of class DecisionFunction that can bring more information about the split
             return bestGini, lambda instance: instance[idxAttr] <= splitPoint
+
+    class SplitPca(BaseSplit):
+        def __init__(self):
+            self.nComp = 3
+            self.pca = pca.PCA(n_components=self.nComp)
+
+        def split(self, node):
+            # TODO What happens when there are categorical attributes?
+            self.pca.fit(node.X)
+            xProj = self.pca.transform(node.X)
+
+            bestGini, bestDecisionFun = math.inf, None
+            for idxComp in range(self.nComp):
+                gini, decisionFun = self._numericSplit(xProj, node.y, idxComp, node)
+                bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
+
+            copyPca = copy.copy(self.pca)
+            return bestGini, 2, lambda x: bestDecisionFun(copyPca.transform([x])[0])
+
+    class SplitLr(BaseSplit):
+        def split(self, node):
+            raise NotImplementedError("Should have implemented this")
+    
+    class SplitStd(BaseSplit):
+        def split(self, node):
+            bestGini, bestDecisionFun = math.inf, None
+            for idxAttr in range(node.nAttr):
+                # TODO call a different function according the type of the attribute (numeric or nominal)
+                gini, decisionFun = self._numericSplit(node.X, node.y, idxAttr, node)
+                bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
+            # TODO parametrize the number of subsets it returns
+            return bestGini, 2, bestDecisionFun
+
+    class DecisionFun:
+        pass
