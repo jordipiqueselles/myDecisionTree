@@ -1,9 +1,11 @@
+from functools import partial
+import random as rnd
 import inspect
 from abc import ABC
 import math
 import numpy as np
 from sklearn.decomposition import pca
-from sklearn.linear_model import logistic
+from sklearn.linear_model import LogisticRegression
 import itertools as ittls
 import collections
 import logging as log
@@ -29,6 +31,22 @@ def calcGini(matrix):
         partialGini += sum(elem * (1 - elem / s) for elem in distr)
     return partialGini / totalCount
 
+
+def calcFreqClasses(y):
+    dictClasses = {}
+    for clss in y:
+        if clss in dictClasses:
+            dictClasses[clss] += 1
+        else:
+            dictClasses[clss] = 1
+
+    listFreq = [0] * (max(dictClasses) + 1)
+    for clss in range(len(listFreq)):
+        if clss in dictClasses:
+            listFreq[clss] = dictClasses[clss]
+    return listFreq
+
+
 # The classes #
 
 class DecisionTree:
@@ -39,6 +57,7 @@ class DecisionTree:
 
     # set log level
     def __init__(self, splitMethod=splitStd, minGiniReduction=0.01, maxDepth=15, minNodeSize=20, minGini=0.05):
+        rnd.seed = 1
         self.node = None
 
         if splitMethod == DecisionTree.splitStd:
@@ -89,7 +108,7 @@ class Node:
         self.decisionFun = None
         self.sons = []
         # frequency of each class in that node
-        self.freqClasses = self._calcFreqClasses()
+        self.freqClasses = calcFreqClasses(self.y)
         # most frequent class
         self.clss = self.freqClasses.index(max(self.freqClasses))
         self.nClasses = len(self.freqClasses)
@@ -144,20 +163,6 @@ class Node:
         # Apply recursively the split() to each new son
         for son in self.sons:
             son.split()
-
-    def _calcFreqClasses(self):
-        dictClasses = {}
-        for clss in self.y:
-            if clss in dictClasses:
-                dictClasses[clss] += 1
-            else:
-                dictClasses[clss] = 1
-
-        listFreq = [0] * (max(dictClasses) + 1)
-        for clss in range(len(listFreq)):
-            if clss in dictClasses:
-                listFreq[clss] = dictClasses[clss]
-        return listFreq
 
     def _stopCriteria(self):
         """
@@ -240,10 +245,45 @@ class Node:
             return bestGini, 2, lambda x: bestDecisionFun(copyPca.transform([x])[0])
 
     class SplitLr(BaseSplit):
+        def __init__(self):
+            self.nVars = 2
+            self.lr = LogisticRegression()
+
         def split(self, node):
-            raise NotImplementedError("Should have implemented this")
-    
+            nIter = node.nAttr
+            (bestGini, bestDecisionFun, bestDistr) = (math.inf, None, None)
+            for _ in range(nIter):
+                selfAttr = [rnd.randint(0, node.nAttr-1) for _ in range(self.nVars)]
+                xAux = self._takeAttr(node.X, selfAttr)
+                self.lr.fit(xAux, node.y)
+                yPred = self.lr.predict(xAux)
+                # each predicted class represents a future branch
+                # we need to know, for each instance, in which class it actually belongs to
+                distrPerBranch = [[0]*node.nClasses for _ in range(node.nClasses)]
+                for i in range(len(yPred)):
+                    distrPerBranch[yPred[i]][node.y[i]] += 1
+
+                # TODO It should support an split that gives some empty branches, but not only one branch
+                if all((sum(branch) > 0 for branch in distrPerBranch)):
+                    gini = calcGini(distrPerBranch)
+                    copyLr = copy.copy(self.lr)
+                    # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], selfAttr))[0]
+                    decisionFun = partial(self._decisionFunction, lr = copyLr, listAttr = selfAttr)
+                    (bestGini, bestDecisionFun, bestDistr) = min((gini, decisionFun, distrPerBranch),
+                                                                 (bestGini, bestDecisionFun, bestDistr), key=lambda x: x[0])
+
+            return bestGini, node.nClasses, bestDecisionFun
+
+        @staticmethod
+        def _takeAttr(X, idxAttrs):
+            return [[X[i][attr] for attr in idxAttrs] for i in range(len(X))]
+
+        @classmethod
+        def _decisionFunction(clss, x, lr, listAttr):
+            return lr.predict(clss._takeAttr([x], listAttr))[0]
+
     class SplitStd(BaseSplit):
+        # TODO One vs all split?
         def split(self, node):
             bestGini, bestDecisionFun = math.inf, None
             for idxAttr in range(node.nAttr):
