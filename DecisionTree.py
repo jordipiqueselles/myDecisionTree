@@ -10,6 +10,8 @@ import itertools as ittls
 import collections
 import logging as log
 import copy
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score
 
 # Auxiliar functions #
 
@@ -56,18 +58,19 @@ class DecisionTree:
     splitStd = "splitStd"
 
     # set log level
-    def __init__(self, splitMethod=splitStd, minGiniReduction=0.01, maxDepth=15, minNodeSize=20, minGini=0.05):
-        rnd.seed = 1
+    def __init__(self, splitMethodName=splitStd, minGiniReduction=0.01, maxDepth=15, minNodeSize=20, minGini=0.05):
+        # rnd.seed = 1
         self.node = None
+        self.spliMethodName = splitMethodName
 
-        if splitMethod == DecisionTree.splitStd:
+        if splitMethodName == DecisionTree.splitStd:
             self.splitMethod = Node.SplitStd()
-        elif splitMethod == DecisionTree.splitLR:
+        elif splitMethodName == DecisionTree.splitLR:
             self.splitMethod = Node.SplitLr()
-        elif splitMethod == DecisionTree.splitPca:
+        elif splitMethodName == DecisionTree.splitPca:
             self.splitMethod = Node.SplitPca()
         else:
-            raise ValueError("Invalid splitMethod: " + splitMethod)
+            raise ValueError("Invalid splitMethod: " + splitMethodName)
 
         if minGiniReduction <= 0:
             raise ValueError("minGiniReduction must be greater than 0")
@@ -90,6 +93,16 @@ class DecisionTree:
     def predict(self, X):
         assert self.node is not None
         return [self.node.predict(x) for x in X]
+
+    def score(self, X, y):
+        yPred = self.predict(X)
+        return accuracy_score(y, yPred)
+
+    def get_params(self, deep=True):
+        # "node": self.node,
+        return {"splitMethodName": self.spliMethodName, "minGiniReduction": self.minGiniReduction,
+                "maxDepth": self.maxDepth, "minNodeSize": self.minNodeSize, "minGini": self.minGini}
+
 
 # Should Node be an inner class of DecisionTree?
 
@@ -228,13 +241,16 @@ class Node:
 
     class SplitPca(BaseSplit):
         def __init__(self):
+            # TODO Take the necessary components until a minimum variance is explained or until no improvement in gini is found
             self.nComp = 3
             self.pca = pca.PCA(n_components=self.nComp)
 
         def split(self, node):
             # TODO What happens when there are categorical attributes?
-            self.pca.fit(node.X)
-            xProj = self.pca.transform(node.X)
+            scaler = StandardScaler().fit(node.X)
+            xScaled = scaler.transform(node.X)
+            self.pca.fit(xScaled)
+            xProj = self.pca.transform(xScaled)
 
             bestGini, bestDecisionFun = math.inf, None
             for idxComp in range(self.nComp):
@@ -242,7 +258,7 @@ class Node:
                 bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
 
             copyPca = copy.copy(self.pca)
-            return bestGini, 2, lambda x: bestDecisionFun(copyPca.transform([x])[0])
+            return bestGini, 2, lambda x: bestDecisionFun(copyPca.transform(scaler.transform([x]))[0])
 
     class SplitLr(BaseSplit):
         def __init__(self):
@@ -252,25 +268,28 @@ class Node:
         def split(self, node):
             nIter = node.nAttr
             (bestGini, bestDecisionFun, bestDistr) = (math.inf, None, None)
-            for _ in range(nIter):
-                selfAttr = [rnd.randint(0, node.nAttr-1) for _ in range(self.nVars)]
-                xAux = self._takeAttr(node.X, selfAttr)
-                self.lr.fit(xAux, node.y)
-                yPred = self.lr.predict(xAux)
-                # each predicted class represents a future branch
-                # we need to know, for each instance, in which class it actually belongs to
-                distrPerBranch = [[0]*node.nClasses for _ in range(node.nClasses)]
-                for i in range(len(yPred)):
-                    distrPerBranch[yPred[i]][node.y[i]] += 1
+            for i in range(node.nAttr):
+                for j in range(i+1, node.nAttr):
+                    # select some attributes randomly
+                    # randAttr = [rnd.randint(0, node.nAttr-1) for _ in range(self.nVars)]
+                    randAttr = [i, j]
+                    xAux = self._takeAttr(node.X, randAttr)
+                    self.lr.fit(xAux, node.y)
+                    yPred = self.lr.predict(xAux)
+                    # each predicted class represents a future branch
+                    # we need to know, for each instance, in which class it actually belongs to
+                    distrPerBranch = [[0]*node.nClasses for _ in range(node.nClasses)]
+                    for k in range(len(yPred)):
+                        distrPerBranch[yPred[k]][node.y[k]] += 1
 
-                # TODO It should support an split that gives some empty branches, but not only one branch
-                if all((sum(branch) > 0 for branch in distrPerBranch)):
-                    gini = calcGini(distrPerBranch)
-                    copyLr = copy.copy(self.lr)
-                    # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], selfAttr))[0]
-                    decisionFun = partial(self._decisionFunction, lr = copyLr, listAttr = selfAttr)
-                    (bestGini, bestDecisionFun, bestDistr) = min((gini, decisionFun, distrPerBranch),
-                                                                 (bestGini, bestDecisionFun, bestDistr), key=lambda x: x[0])
+                    # TODO It should support an split that gives some empty branches, but not only one branch
+                    if all((sum(branch) > 0 for branch in distrPerBranch)):
+                        gini = calcGini(distrPerBranch)
+                        copyLr = copy.copy(self.lr)
+                        # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], randAttr))[0]
+                        decisionFun = partial(self._decisionFunction, lr = copyLr, listAttr = randAttr)
+                        (bestGini, bestDecisionFun, bestDistr) = min((gini, decisionFun, distrPerBranch),
+                                                                     (bestGini, bestDecisionFun, bestDistr), key=lambda x: x[0])
 
             return bestGini, node.nClasses, bestDecisionFun
 
@@ -283,6 +302,7 @@ class Node:
             return lr.predict(clss._takeAttr([x], listAttr))[0]
 
     class SplitStd(BaseSplit):
+        # TODO It's better to maintain sorted all the attributes
         # TODO One vs all split?
         def split(self, node):
             bestGini, bestDecisionFun = math.inf, None
