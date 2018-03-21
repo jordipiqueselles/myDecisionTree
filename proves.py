@@ -53,19 +53,20 @@ def evalFolderDatasets():
 
 
 def testClassifier():
-    X, y = load_wine(return_X_y=True)
+    X, y = load_breast_cancer(return_X_y=True)
     # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
     print("nInst:", len(X), "| nAttr:", len(X[0]), "| nClasses:", len(set(y)))
     t = time.time()
     dt = DecisionTree(splitMethodName=DecisionTree.splitPca)
-    scores = cross_val_score(dt, X, y, cv=10, n_jobs=-1)
+    scores = cross_val_score(dt, X, y, cv=8, n_jobs=1)
     t = time.time() - t
     print("CV accuracy:", scores.mean())
     print("Time:", t)
 
 
 if __name__ == '__main__':
-    evalFolderDatasets()
+    # evalFolderDatasets()
+    testClassifier()
 
     # dt.fit(X_train, y_train)
     # pred = dt.predict(X_test)

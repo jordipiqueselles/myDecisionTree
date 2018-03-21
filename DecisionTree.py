@@ -151,7 +151,7 @@ class Node:
         if self._isNodeLeaf():
             return self.clss
         else:
-            idSon = self.decisionFun(x)
+            idSon = self.decisionFun.apply(x)
             return self.sons[idSon].predict(x)
 
     def split(self):
@@ -199,7 +199,7 @@ class Node:
         # In dataSons[i] we will have the X and y values for the future "i" son
         dataSons = [{'X': [], 'y': []} for _ in range(nSubsets)]
         for (i, instance) in enumerate(self.X):
-            idSon = self.decisionFun(instance)
+            idSon = self.decisionFun.apply(instance)
             dataSons[idSon]['X'].append(instance)
             dataSons[idSon]['y'].append(self.y[i])
 
@@ -220,8 +220,8 @@ class Node:
         def split(self, node):
             raise NotImplementedError("Should have implemented this")
 
-        @staticmethod
-        def _numericSplit(X, y, idxAttr, node):
+        @classmethod
+        def _numericSplit(cls, X, y, idxAttr, node):
             sortedAttr = sorted(((X[i][idxAttr], y[i]) for i in range(node.nInst)))
             distrPerBranch = [node.freqClasses.copy(), [0]*node.nClasses]
 
@@ -237,12 +237,20 @@ class Node:
                 (attr_ant, clss_ant) = (attr, clss)
 
             # TODO Instead of returning a lambda, I could return an object of class DecisionFunction that can bring more information about the split
-            return bestGini, lambda instance: instance[idxAttr] <= splitPoint
+            return bestGini, cls.BaseSplitDecisionFun(idxAttr, splitPoint)  # lambda instance: instance[idxAttr] <= splitPoint
+
+        class BaseSplitDecisionFun:
+            def __init__(self, idxAttr, splitPoint):
+                self.idxAttr = idxAttr
+                self.splitPoint = splitPoint
+
+            def apply(self, instance):
+                return instance[self.idxAttr] <= self.splitPoint
 
     class SplitPca(BaseSplit):
         def __init__(self):
             # TODO Take the necessary components until a minimum variance is explained or until no improvement in gini is found
-            self.nComp = 3
+            self.nComp = 4
             self.pca = pca.PCA(n_components=self.nComp)
 
         def split(self, node):
@@ -258,7 +266,16 @@ class Node:
                 bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
 
             copyPca = copy.copy(self.pca)
-            return bestGini, 2, lambda x: bestDecisionFun(copyPca.transform(scaler.transform([x]))[0])
+            return bestGini, 2, self.SplitPcaDecisionFun(copyPca, scaler, bestDecisionFun)
+
+        class SplitPcaDecisionFun:
+            def __init__(self, pca, scaler, decFun):
+                self.pca = pca
+                self.scaler = scaler
+                self.decFun = decFun
+
+            def apply(self, instance):
+                return self.decFun.apply(self.pca.transform(self.scaler.transform([instance]))[0])
 
     class SplitLr(BaseSplit):
         def __init__(self):
@@ -266,6 +283,17 @@ class Node:
             self.lr = LogisticRegression()
 
         def split(self, node):
+            # bestGini, bestDecisionFun = math.inf, None
+            rankSplits = []
+            for idxAttr in range(node.nAttr):
+                # TODO call a different function according the type of the attribute (numeric or nominal)
+                gini, decisionFun = self._numericSplit(node.X, node.y, idxAttr, node)
+                # bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
+                rankSplits.append((gini, decisionFun))
+            # TODO parametrize the number of subsets it returns
+            return bestGini, 2, bestDecisionFun
+
+        def split2(self, node):
             nIter = node.nAttr
             (bestGini, bestDecisionFun, bestDistr) = (math.inf, None, None)
             for i in range(node.nAttr):
@@ -301,6 +329,10 @@ class Node:
         def _decisionFunction(clss, x, lr, listAttr):
             return lr.predict(clss._takeAttr([x], listAttr))[0]
 
+        class DecisionFun:
+            def __init__(self):
+                pass
+
     class SplitStd(BaseSplit):
         # TODO It's better to maintain sorted all the attributes
         # TODO One vs all split?
@@ -312,6 +344,3 @@ class Node:
                 bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
             # TODO parametrize the number of subsets it returns
             return bestGini, 2, bestDecisionFun
-
-    class DecisionFun:
-        pass
