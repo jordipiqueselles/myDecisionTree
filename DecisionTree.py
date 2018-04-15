@@ -12,6 +12,7 @@ import logging as log
 import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
 
 # Auxiliar functions #
 
@@ -52,18 +53,6 @@ def calcCountsClasses(y, nClasses):
     for clss in y:
         listCounts[clss] += 1
     return listCounts
-    # dictClasses = {}
-    # for clss in y:
-    #     if clss in dictClasses:
-    #         dictClasses[clss] += 1
-    #     else:
-    #         dictClasses[clss] = 1
-    #
-    # listCounts = [0] * (max(dictClasses) + 1)
-    # for clss in range(len(listCounts)):
-    #     if clss in dictClasses:
-    #         listCounts[clss] = dictClasses[clss]
-    # return listCounts
 
 
 # The classes #
@@ -75,7 +64,7 @@ class DecisionTree:
     splitStd = "splitStd"
 
     # set log level
-    def __init__(self, splitMethodName=splitStd, minGiniReduction=0.01, maxDepth=15, minNodeSize=20, minGini=0.05, splitCriteria=calcEntropy):
+    def __init__(self, splitMethodName=splitStd, minGiniReduction=0.001, maxDepth=15, minNodeSize=5, minGini=0.01, splitCriteria=calcEntropy):
         # rnd.seed = 1
         self.node = None
         self.spliMethodName = splitMethodName
@@ -109,9 +98,11 @@ class DecisionTree:
 
     def fit(self, X, y):
         y = self._transClassToIdx(y)
-        self.nClasses = len(set(y))
-        self.node = Node(X, y, self)
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        self.nClasses = len(set(y_train))
+        self.node = Node(X_train, y_train, self)
         self.node.split()
+        self.node.prune(X_test, y_test)
 
     def predict(self, X):
         assert self.node is not None
@@ -239,6 +230,31 @@ class Node:
         # Apply recursively the split() to each new son
         for son in self.sons:
             son.split()
+
+    def prune(self, X_test, y_test):
+        # number of misclassified instances if this node is the only predictor
+        costSelf = sum((clss != self.clss for clss in y_test))
+        if self._isNodeLeaf():
+            return costSelf
+        else:
+            # each element of listXy contains the X and y instances that go to the ith son
+            listXy = [([],[]) for _ in  range(self.parentTree.nClasses)]
+            assert len(self.sons) == len(listXy)
+            for i in range(len(X_test)):
+                idSon = self.decisionFun.apply(X_test[i])
+                listXy[idSon][0].append(X_test[i])
+                listXy[idSon][1].append(y_test[i])
+            costSons = sum((self.sons[i].prune(listXy[i][0], listXy[i][1]) for i in range(len(listXy))))
+
+            if costSons >= costSelf:
+                # prune
+                self.sons = []
+                self.decisionFun = None
+                return costSelf
+
+            else:
+                # don't prune
+                return costSons
 
     def _stopCriteria(self):
         """

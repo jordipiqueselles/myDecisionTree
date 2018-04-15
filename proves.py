@@ -49,7 +49,8 @@ def evalFolderDatasets():
     folder = ".\\datasets\\"
     # take only .arff or .csv files
     listFileName = [fileName for fileName in os.listdir(folder) if fileName[-5:] == ".arff" or fileName[-4:] == '.csv']
-    listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR]
+    # listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR]
+    listSplitMethods = [DecisionTree.splitStd]
 
     for fileName in listFileName:
         X, y = readFile(folder + fileName)
@@ -86,7 +87,7 @@ def evalFolderDatasets():
 
             # Only to evaluate the first split
             t = time.time()
-            dt = DecisionTree(splitMethodName=method, maxDepth=0)
+            dt = DecisionTree(splitMethodName=method, maxDepth=30)
             dt.fit(X_train, y_train)
             pred = dt.predict(X_test)
             acc = accuracy_score(y_test, pred)
