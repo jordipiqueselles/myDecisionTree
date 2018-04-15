@@ -34,19 +34,36 @@ def calcGini(matrix):
     return partialGini / totalCount
 
 
-def calcFreqClasses(y):
-    dictClasses = {}
-    for clss in y:
-        if clss in dictClasses:
-            dictClasses[clss] += 1
-        else:
-            dictClasses[clss] = 1
+def calcEntropy(matrix):
+    totalCount = 0
+    partialEntropy = 0
+    for distr in matrix:
+        s = sum(distr) + 0.0000001  # to avoid division by 0
+        totalCount += s
+        assert all((elem >= 0 for elem in distr))
+        assert s > 0
+        partialEntropy -= sum(elem * math.log2((elem+0.0000001)/s) for elem in distr)
+    return partialEntropy / totalCount
 
-    listFreq = [0] * (max(dictClasses) + 1)
-    for clss in range(len(listFreq)):
-        if clss in dictClasses:
-            listFreq[clss] = dictClasses[clss]
-    return listFreq
+
+
+def calcCountsClasses(y, nClasses):
+    listCounts = [0] * nClasses
+    for clss in y:
+        listCounts[clss] += 1
+    return listCounts
+    # dictClasses = {}
+    # for clss in y:
+    #     if clss in dictClasses:
+    #         dictClasses[clss] += 1
+    #     else:
+    #         dictClasses[clss] = 1
+    #
+    # listCounts = [0] * (max(dictClasses) + 1)
+    # for clss in range(len(listCounts)):
+    #     if clss in dictClasses:
+    #         listCounts[clss] = dictClasses[clss]
+    # return listCounts
 
 
 # The classes #
@@ -58,7 +75,7 @@ class DecisionTree:
     splitStd = "splitStd"
 
     # set log level
-    def __init__(self, splitMethodName=splitStd, minGiniReduction=0.01, maxDepth=15, minNodeSize=20, minGini=0.05):
+    def __init__(self, splitMethodName=splitStd, minGiniReduction=0.01, maxDepth=15, minNodeSize=20, minGini=0.05, splitCriteria=calcEntropy):
         # rnd.seed = 1
         self.node = None
         self.spliMethodName = splitMethodName
@@ -79,6 +96,10 @@ class DecisionTree:
         self.maxDepth = maxDepth
         self.minNodeSize = minNodeSize
         self.minGini = minGini
+        self.splitCriteria = splitCriteria
+        self.classToIdx = None
+        self.idxToClass = None
+        self.nClasses = None
 
     def __str__(self):
         if self.node is None:
@@ -87,12 +108,20 @@ class DecisionTree:
             return self.node.__str__()
 
     def fit(self, X, y):
+        y = self._transClassToIdx(y)
+        self.nClasses = len(set(y))
         self.node = Node(X, y, self)
         self.node.split()
 
     def predict(self, X):
         assert self.node is not None
-        return [self.node.predict(x) for x in X]
+        yPredIdx = [self.node.predict(x) for x in X]
+        yPredClss = self._transIdxToClass(yPredIdx)
+        return yPredClss
+
+    def predict_proba(self, X):
+        assert self.node is not None
+        return [self.node.predict_proba(x) for x in X]
 
     def score(self, X, y):
         yPred = self.predict(X)
@@ -102,6 +131,24 @@ class DecisionTree:
         # "node": self.node,
         return {"splitMethodName": self.spliMethodName, "minGiniReduction": self.minGiniReduction,
                 "maxDepth": self.maxDepth, "minNodeSize": self.minNodeSize, "minGini": self.minGini}
+
+    def _transClassToIdx(self, y):
+        """
+        Crates two dictionaries, one to transform classes to indices and the other to transform indices to classes.
+        Then, it return the y, a list of classes of any type to a list of numbers, being each number 0 <= n < nClasses
+        :param y: A list where each element represents a class
+        :return: A list where each element is an index (number) representing a class
+        """
+        tupleIdxToClass = list(enumerate(set(y)))
+        tupleClassToIdx = [(b,a) for (a,b) in tupleIdxToClass]
+        self.classToIdx = dict(tupleClassToIdx)
+        self.idxToClass = dict(tupleIdxToClass)
+
+        return [self.classToIdx[clss] for clss in y]
+
+    def _transIdxToClass(self, y):
+        assert self.idxToClass is not None
+        return [self.idxToClass[idx] for idx in y]
 
 
 # Should Node be an inner class of DecisionTree?
@@ -121,21 +168,24 @@ class Node:
         self.decisionFun = None
         self.sons = []
         # frequency of each class in that node
-        self.freqClasses = calcFreqClasses(self.y)
+        self.freqClasses = calcCountsClasses(self.y, self.parentTree.nClasses)
+        assert all(freq >= 0 for freq in self.freqClasses)
         # most frequent class
         self.clss = self.freqClasses.index(max(self.freqClasses))
-        self.nClasses = len(self.freqClasses)
+        self.nClassesNode = sum(freq != 0 for freq in self.freqClasses)
         self.nInst = len(self.X)
         self.nAttr = len(self.X[0])
-        self.gini = calcGini([self.freqClasses])
+        self.gini = self.parentTree.splitCriteria([self.freqClasses])
         self.accuracy = max(self.freqClasses)/sum(self.freqClasses)
 
     def __str__(self):
         # La accuracy s'ha de generalitza per a datasets amb etiquetes diferents a True i False
         # "{0:.2f}".format(a)
+        giniSons = sum((self.parentTree.splitCriteria([son.freqClasses])*len(son.X) for son in self.sons)) / len(self.X)
         strTree = 'size: ' + str(self.nInst) + '; Accuracy: ' + \
                   '{0:.2f}'.format(self.accuracy) + \
-                  '; Gini: ' + '{0:.2f}'.format(calcGini([self.freqClasses])) + "; Predict: " + str(self.clss) + '\n'
+                  '; GiniFather: ' + '{0:.2f}'.format(self.parentTree.splitCriteria([self.freqClasses])) + \
+                  "; GiniSons: " + '{0:.2f}'.format(giniSons) + "; Predict: " + str(self.clss) + '\n'
         # posar les funcions de accuracy i altres (recall, precision...) fora de la classe i
         # cridar-les en aquest print
         for i in range(len(self.sons)):
@@ -153,6 +203,19 @@ class Node:
         else:
             idSon = self.decisionFun.apply(x)
             return self.sons[idSon].predict(x)
+
+    def predict_proba(self, x):
+        """
+        Predicts the class for the instance x
+        :param x: x is a single list or np.array of 1xn
+        :return: The predicted value for x
+        """
+        if self._isNodeLeaf():
+            # it should know the real number of classes, because in a node may not appear instances of a certain class
+            return [freq/len(self.y) for freq in self.freqClasses]
+        else:
+            idSon = self.decisionFun.apply(x)
+            return self.sons[idSon].predict_proba(x)
 
     def split(self):
         """
@@ -223,7 +286,7 @@ class Node:
         @classmethod
         def _numericSplit(cls, X, y, idxAttr, node):
             sortedAttr = sorted(((X[i][idxAttr], y[i]) for i in range(node.nInst)))
-            distrPerBranch = [node.freqClasses.copy(), [0]*node.nClasses]
+            distrPerBranch = [node.freqClasses.copy(), [0]*node.nClassesNode]
 
             bestGini = math.inf
             (attr_ant, clss_ant) = (sortedAttr[0][0], sortedAttr[0][1])
@@ -232,7 +295,7 @@ class Node:
                 distrPerBranch[0][clss_ant] -= 1
                 distrPerBranch[1][clss_ant] += 1
                 if attr_ant != attr:  # and class_ant != clss
-                    newGini = calcGini(distrPerBranch)
+                    newGini = node.parentTree.splitCriteria(distrPerBranch)
                     bestGini, splitPoint = min((newGini, (attr_ant+attr)/2), (bestGini, splitPoint))
                 (attr_ant, clss_ant) = (attr, clss)
 
@@ -280,58 +343,45 @@ class Node:
     class SplitLr(BaseSplit):
         def __init__(self):
             self.nVars = 2
-            self.lr = LogisticRegression()
+            self.lr = LogisticRegression(C=999999)
 
         def split(self, node):
-            # bestGini, bestDecisionFun = math.inf, None
-            rankSplits = []
-            for idxAttr in range(node.nAttr):
-                # TODO call a different function according the type of the attribute (numeric or nominal)
-                gini, decisionFun = self._numericSplit(node.X, node.y, idxAttr, node)
-                # bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
-                rankSplits.append((gini, decisionFun))
-            # TODO parametrize the number of subsets it returns
-            return bestGini, 2, bestDecisionFun
-
-        def split2(self, node):
             nIter = node.nAttr
             (bestGini, bestDecisionFun, bestDistr) = (math.inf, None, None)
             for i in range(node.nAttr):
                 for j in range(i+1, node.nAttr):
                     # select some attributes randomly
-                    # randAttr = [rnd.randint(0, node.nAttr-1) for _ in range(self.nVars)]
-                    randAttr = [i, j]
-                    xAux = self._takeAttr(node.X, randAttr)
+                    # idxAttr = [rnd.randint(0, node.nAttr-1) for _ in range(self.nVars)]
+                    idxAttr = [i, j]
+                    xAux = [[instance[attr] for attr in idxAttr] for instance in node.X]
                     self.lr.fit(xAux, node.y)
                     yPred = self.lr.predict(xAux)
                     # each predicted class represents a future branch
                     # we need to know, for each instance, in which class it actually belongs to
-                    distrPerBranch = [[0]*node.nClasses for _ in range(node.nClasses)]
+                    distrPerBranch = [[0]*node.nClassesNode for _ in range(node.nClassesNode)]
                     for k in range(len(yPred)):
                         distrPerBranch[yPred[k]][node.y[k]] += 1
 
                     # TODO It should support an split that gives some empty branches, but not only one branch
                     if all((sum(branch) > 0 for branch in distrPerBranch)):
-                        gini = calcGini(distrPerBranch)
+                        gini = node.parentTree.splitCriteria(distrPerBranch)
                         copyLr = copy.copy(self.lr)
-                        # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], randAttr))[0]
-                        decisionFun = partial(self._decisionFunction, lr = copyLr, listAttr = randAttr)
+                        # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], idxAttr))[0]
+                        decisionFun = self.SplitLrDecisionFun(copyLr, idxAttr)
                         (bestGini, bestDecisionFun, bestDistr) = min((gini, decisionFun, distrPerBranch),
                                                                      (bestGini, bestDecisionFun, bestDistr), key=lambda x: x[0])
 
-            return bestGini, node.nClasses, bestDecisionFun
+            return bestGini, node.nClassesNode, bestDecisionFun
 
-        @staticmethod
-        def _takeAttr(X, idxAttrs):
-            return [[X[i][attr] for attr in idxAttrs] for i in range(len(X))]
+        class SplitLrDecisionFun:
+            def __init__(self, lr, listAttr):
+                self.lr = lr
+                self.listAttr = listAttr
 
-        @classmethod
-        def _decisionFunction(clss, x, lr, listAttr):
-            return lr.predict(clss._takeAttr([x], listAttr))[0]
+            def apply(self, instance):
+                attr = [instance[attr] for attr in self.listAttr]
+                return self.lr.predict([attr])[0]
 
-        class DecisionFun:
-            def __init__(self):
-                pass
 
     class SplitStd(BaseSplit):
         # TODO It's better to maintain sorted all the attributes
