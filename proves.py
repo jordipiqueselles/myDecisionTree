@@ -2,6 +2,7 @@ from DecisionTree import DecisionTree
 from sklearn.datasets import load_iris, load_breast_cancer, load_digits, load_wine
 from sklearn.metrics import accuracy_score, roc_auc_score
 from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.tree import DecisionTreeClassifier
 import time
 from scipy.io import arff
 import os
@@ -43,33 +44,40 @@ def readFile(path):
     return X, y
 
 
+def writeResultsCsv(dataset, method, acc, auc, t, numNodes):
+    with open(nameOutFile, 'a') as f:
+        f.write(dataset + ";" + method + ";" + str(acc) + ';' + str(auc) + ';' + str(t) + ';' + str(numNodes) + '\n')
+
+
 def evalFolderDatasets():
     # folder = "C:\\Users\\pique\\OneDrive - HP Inc\\MIRI\\FastRandomForest\\datasets\\RDG1_generator\\"
     # folder = "C:\\Users\\pique\\OneDrive - HP Inc\\MIRI\\FastRandomForest\\datasets\\real_datasets\\"
     folder = ".\\datasets\\"
     # take only .arff or .csv files
     listFileName = [fileName for fileName in os.listdir(folder) if fileName[-5:] == ".arff" or fileName[-4:] == '.csv']
-    # listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR]
-    listSplitMethods = [DecisionTree.splitStd]
+    listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR]
+    # listSplitMethods = [DecisionTree.splitStd]
 
     for fileName in listFileName:
         X, y = readFile(folder + fileName)
 
         # meta info about the dataset (numInstances, numAttributes, nClasses...)
         nClasses = set(y)
-        distrClss = [y.count(elem) for elem in set(y)]
-        bestPrior = max(distrClss) / sum(distrClss)
-
         # Only the datasets that have less than 100 attributes and have extactly 2 classes will be used
         if len(X) < 30 or len(X[0]) > 100 or len(nClasses) != 2:
             print("################################################################")
             print()
             continue
+
+        distrClss = [y.count(elem) for elem in set(y)]
+        bestPrior = max(distrClss) / sum(distrClss)
+
         print("Learning ", fileName)
         print("nInst:", len(X), "| nAttr:", len(X[0]), "| nClasses:", len(nClasses), "| distrClasses:", distrClss, "| bestPrior:", bestPrior)
         print()
 
         # Train and test split
+        np.random.seed(2)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
 
         for method in listSplitMethods:
@@ -88,6 +96,7 @@ def evalFolderDatasets():
             # Only to evaluate the first split
             t = time.time()
             dt = DecisionTree(splitMethodName=method, maxDepth=30)
+            # dt = DecisionTreeClassifier()
             dt.fit(X_train, y_train)
             pred = dt.predict(X_test)
             acc = accuracy_score(y_test, pred)
@@ -101,6 +110,8 @@ def evalFolderDatasets():
             print("Time:", t)
             print()
             print(dt)
+
+            writeResultsCsv(fileName, method, acc, auc, t, dt.node.getNumNodes())
 
         print("################################################################")
         print()
@@ -135,6 +146,7 @@ def testClassifierTrainTest(splitMethod):
 
 
 if __name__ == '__main__':
+    nameOutFile = "provesOut.csv"
     seed = 2
     # np.random.seed(seed)
     # print("Split LR")

@@ -64,7 +64,7 @@ class DecisionTree:
     splitStd = "splitStd"
 
     # set log level
-    def __init__(self, splitMethodName=splitStd, minGiniReduction=0.001, maxDepth=15, minNodeSize=5, minGini=0.01, splitCriteria=calcEntropy):
+    def __init__(self, splitMethodName=splitStd, minGiniReduction=0.001, maxDepth=30, minNodeSize=10, minGini=0.01, splitCriteria=calcEntropy):
         # rnd.seed = 1
         self.node = None
         self.spliMethodName = splitMethodName
@@ -97,6 +97,7 @@ class DecisionTree:
             return self.node.__str__()
 
     def fit(self, X, y):
+        np.random.seed(1)
         y = self._transClassToIdx(y)
         X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
         self.nClasses = len(set(y_train))
@@ -256,16 +257,28 @@ class Node:
                 # don't prune
                 return costSons
 
+    def getNumNodes(self):
+        """
+        :return: The number of nodes that the subtree starting from that node has
+        """
+        return 1 + sum(son.getNumNodes() for son in self.sons)
+
     def _stopCriteria(self):
         """
         Function that returns True if the node should be a leaf and, therefore, should not be splitted
         :return: True or False
         """
+        # node not large enough
         if self.nInst < self.parentTree.minNodeSize:
             return True
+        # gini reduced enough
         elif self.gini < self.parentTree.minGini:
             return True
+        # too deep
         elif self.depth > self.parentTree.maxDepth:
+            return True
+        # pure node
+        elif any((nInst == len(self.y) for nInst in self.freqClasses)):
             return True
         else:
             return False
