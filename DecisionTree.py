@@ -13,6 +13,7 @@ import copy
 from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
+from sklearn.cluster import KMeans
 
 # Auxiliar functions #
 
@@ -62,6 +63,7 @@ class DecisionTree:
     splitPca = "splitPca"
     splitLR = "splitLR"
     splitStd = "splitStd"
+    splitKmeans = "splitKmeans"
 
     # set log level
     def __init__(self, splitMethodName=splitStd, minGiniReduction=0.001, maxDepth=30, minNodeSize=10, minGini=0.01, splitCriteria=calcEntropy):
@@ -75,6 +77,8 @@ class DecisionTree:
             self.splitMethod = Node.SplitLr()
         elif splitMethodName == DecisionTree.splitPca:
             self.splitMethod = Node.SplitPca()
+        elif splitMethodName == DecisionTree.splitKmeans:
+            self.splitMethod = Node.SplitKmeans()
         else:
             raise ValueError("Invalid splitMethod: " + splitMethodName)
 
@@ -338,6 +342,36 @@ class Node:
 
             def apply(self, instance):
                 return instance[self.idxAttr] <= self.splitPoint
+
+    class SplitKmeans(BaseSplit):
+        def __init__(self):
+            self.kmeans = KMeans(n_clusters=2)
+
+        def split(self, node):
+            (bestGini, bestDecisionFun) = (math.inf, None)
+            for i in range(node.nAttr):
+                for j in range(i + 1, node.nAttr):
+                    self.kmeans.fit(node.X)
+                    idxClusters = self.kmeans.predict(node.X)
+                    # each predicted class represents a future branch
+                    # we need to know, for each instance, in which class it actually belongs to
+                    distrPerBranch = [[0] * node.nClassesNode for _ in range(node.nClassesNode)]
+                    for k in range(len(idxClusters)):
+                        distrPerBranch[idxClusters[k]][node.y[k]] += 1
+
+                    gini = calcGini(distrPerBranch)
+                    decisionFun = self.KmeansSplitDecisionFun(copy.copy(self.kmeans))
+                    (bestGini, bestDecisionFun) = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
+
+            return bestGini, 2, bestDecisionFun
+
+
+        class KmeansSplitDecisionFun:
+            def __init__(self, kmeans):
+                self.kmeans = kmeans
+
+            def apply(self, instance):
+                return self.kmeans.predict([instance])[0]
 
     class SplitPca(BaseSplit):
         def __init__(self):

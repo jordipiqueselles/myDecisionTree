@@ -55,8 +55,8 @@ def evalFolderDatasets():
     folder = ".\\datasets\\"
     # take only .arff or .csv files
     listFileName = [fileName for fileName in os.listdir(folder) if fileName[-5:] == ".arff" or fileName[-4:] == '.csv']
-    listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR]
-    # listSplitMethods = [DecisionTree.splitStd]
+    # listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR]
+    listSplitMethods = [DecisionTree.splitKmeans]
 
     for fileName in listFileName:
         X, y = readFile(folder + fileName)
@@ -84,34 +84,36 @@ def evalFolderDatasets():
             print("---------------------------------------------------------------")
             print("Method:", method)
 
-            # Evaluate the classifier using 10-fold cross-validation
-            # t = time.time()
-            # dt = DecisionTree(splitMethodName=method)
-            # scores = cross_val_score(dt, X, y, cv=8, n_jobs=-1)
-            # t = time.time() - t
-            # print("CV accuracy:", scores.mean())
-            # print("Time:", t)
-            # print()
+            if False:
+                # Evaluate the classifier using 10-fold cross-validation
+                t = time.time()
+                dt = DecisionTree(splitMethodName=method, maxDepth=0)
+                scores = cross_val_score(dt, X, y, cv=8, n_jobs=1)
+                t = time.time() - t
+                print("CV accuracy:", scores.mean())
+                print("Time:", t)
+                print()
 
-            # Only to evaluate the first split
-            t = time.time()
-            dt = DecisionTree(splitMethodName=method, maxDepth=30)
-            # dt = DecisionTreeClassifier()
-            dt.fit(X_train, y_train)
-            pred = dt.predict(X_test)
-            acc = accuracy_score(y_test, pred)
-            prob = [pr[1] for pr in dt.predict_proba(X_test)]
-            # prob = dt.predict_proba(X_test)
-            y_test_bin = dt._transClassToIdx(y_test)
-            auc = roc_auc_score(y_test_bin, prob)
-            t = time.time() - t
-            print("Accuracy:", acc)
-            print("AUC:", auc)
-            print("Time:", t)
-            print()
-            print(dt)
+            else:
+                # Only to evaluate the first split
+                t = time.time()
+                dt = DecisionTree(splitMethodName=method, maxDepth=30)
+                # dt = DecisionTreeClassifier()
+                dt.fit(X_train, y_train)
+                pred = dt.predict(X_test)
+                acc = accuracy_score(y_test, pred)
+                prob = [pr[1] for pr in dt.predict_proba(X_test)]
+                # prob = dt.predict_proba(X_test)
+                y_test_bin = dt._transClassToIdx(y_test)
+                auc = roc_auc_score(y_test_bin, prob)
+                t = time.time() - t
+                print("Accuracy:", acc)
+                print("AUC:", auc)
+                print("Time:", t)
+                print()
+                print(dt)
 
-            writeResultsCsv(fileName, method, acc, auc, t, dt.node.getNumNodes())
+            # writeResultsCsv(fileName, method, acc, auc, t, dt.node.getNumNodes())
 
         print("################################################################")
         print()
