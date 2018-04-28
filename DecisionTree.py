@@ -11,9 +11,11 @@ import collections
 import logging as log
 import copy
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, silhouette_score
 from sklearn.model_selection import train_test_split
 from sklearn.cluster import KMeans
+import matplotlib.pyplot as plt
+from matplotlib.figure import Figure
 
 # Auxiliar functions #
 
@@ -225,7 +227,7 @@ class Node:
         giniSons, nSubsets, self.decisionFun = self.parentTree.splitMethod.split(self)
 
         # Avoid spliting if we don't reduce the gini score
-        if giniSons + self.parentTree.minGiniReduction >= self.gini:
+        if giniSons + self.parentTree.minGiniReduction >= self.gini or self.decisionFun is None:
             self.decisionFun = None
             return
 
@@ -267,6 +269,30 @@ class Node:
         """
         return 1 + sum(son.getNumNodes() for son in self.sons)
 
+    def plotSplit(self):
+        if self.decisionFun is not None:
+            if isinstance(self.decisionFun, self.SplitLr.SplitLrDecisionFun):
+                plt.figure()
+                xAux = [[instance[attr] for attr in self.decisionFun.listAttr] for instance in self.X]
+                x1 = [instance[0] for instance in xAux]
+                x2 = [instance[1] for instance in xAux]
+                plt.scatter(x1, x2, c=self.y, alpha=0.1, marker='o')
+                m, n = self.decisionFun.getSplitLine()
+                x = [min(x1), max(x1)]
+                y = [x[0]*m + n, x[1]*m + n]
+                plt.plot(x, y)
+                plt.show()
+
+            elif isinstance(self.decisionFun, self.BaseSplit.BaseSplitDecisionFun):
+                plt.figure()
+                x1 = [instance[self.decisionFun.listAttr] for instance in self.X]
+                x2 = np.random.rand(len(x1))
+                plt.scatter(x1, x2, c=self.y, alpha=0.1, marker='o')
+                x = [self.decisionFun.splitPoint] * 2
+                y = [0, 1]
+                plt.plot(x, y)
+                plt.show()
+
     def _stopCriteria(self):
         """
         Function that returns True if the node should be a leaf and, therefore, should not be splitted
@@ -305,7 +331,6 @@ class Node:
                      for i in range(nSubsets) if len(dataSons[i]['X']) > 0]
         assert len(self.sons) >= 2
 
-
     def _isNodeLeaf(self):
         return self.decisionFun is None
 
@@ -336,35 +361,56 @@ class Node:
             return bestGini, cls.BaseSplitDecisionFun(idxAttr, splitPoint)  # lambda instance: instance[idxAttr] <= splitPoint
 
         class BaseSplitDecisionFun:
-            def __init__(self, idxAttr, splitPoint):
-                self.idxAttr = idxAttr
+            def __init__(self, listAttr, splitPoint):
+                self.listAttr = listAttr
                 self.splitPoint = splitPoint
 
             def apply(self, instance):
-                return instance[self.idxAttr] <= self.splitPoint
+                return instance[self.listAttr] <= self.splitPoint
 
     class SplitKmeans(BaseSplit):
         def __init__(self):
             self.kmeans = KMeans(n_clusters=2)
+            self.sizeSubsets = 2
+            self.maxClusters = 2
 
         def split(self, node):
-            (bestGini, bestDecisionFun) = (math.inf, None)
-            subsets = ittls.combinations(range(node.nAttr), 2)
+            (bestGini, bestDecisionFun, bestNClust) = (math.inf, None, 0)
+            subsets = ittls.combinations(range(node.nAttr), self.sizeSubsets)
+            listNClusters = range(2, min(len(node.X)-1, self.maxClusters+1))
             for idxAttr in subsets:
                 xAux = [[instance[attr] for attr in idxAttr] for instance in node.X]
-                self.kmeans.fit(xAux)
-                idxClusters = self.kmeans.predict(xAux)
+                # if all the instances have the same coordinates
+                if all((coord == xAux[0] for coord in xAux)):
+                    continue
+                nFinalClust = self.maxClusters
+                lastSil = -1
+                for nclust in listNClusters:
+                    # compute kmeans
+                    auxKmeans = KMeans(n_clusters=nclust)
+                    auxKmeans.fit(xAux)
+                    idxClusters = auxKmeans.predict(xAux)
+                    # compute the silhouette score
+                    sil = silhouette_score(xAux, idxClusters)
+                    # if we stop improving by increasing the number of clusters we leave the loop
+                    if sil <= lastSil:
+                        nFinalClust = nclust - 1
+                        break
+                    self.kmeans = auxKmeans
+                    lastSil = sil
                 # each predicted class represents a future branch
                 # we need to know, for each instance, in which class it actually belongs to
-                distrPerBranch = [[0] * node.nClassesNode for _ in range(node.nClassesNode)]
+                idxClusters = self.kmeans.predict(xAux)
+                distrPerBranch = [[0] * node.nClassesNode for _ in range(nFinalClust)]
                 for k in range(len(idxClusters)):
                     distrPerBranch[idxClusters[k]][node.y[k]] += 1
 
                 gini = calcGini(distrPerBranch)
                 decisionFun = self.KmeansSplitDecisionFun(copy.copy(self.kmeans), idxAttr)
-                (bestGini, bestDecisionFun) = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
+                (bestGini, bestDecisionFun, bestNClust) = \
+                    min((gini, decisionFun, nFinalClust), (bestGini, bestDecisionFun, bestNClust), key=lambda x: x[0])
 
-            return bestGini, 2, bestDecisionFun
+            return bestGini, bestNClust, bestDecisionFun
 
 
         class KmeansSplitDecisionFun:
@@ -448,6 +494,14 @@ class Node:
             def apply(self, instance):
                 selectedAttr = [instance[attr] for attr in self.listAttr]
                 return self.lr.predict([selectedAttr])[0]
+
+            def getSplitLine(self):
+                k1 = self.lr.coef_[0][0]
+                k2 = self.lr.coef_[0][1]
+                c = self.lr.intercept_
+                m = -k1/k2
+                n = -c/k2
+                return m, n
 
 
     class SplitStd(BaseSplit):

@@ -44,9 +44,10 @@ def readFile(path):
     return X, y
 
 
-def writeResultsCsv(dataset, method, acc, auc, t, numNodes):
+def writeResultsCsv(dataset, nInst, nAttr, bestPrior, method, acc, auc, t, numNodes):
     with open(nameOutFile, 'a') as f:
-        f.write(dataset + ";" + method + ";" + str(acc) + ';' + str(auc) + ';' + str(t) + ';' + str(numNodes) + '\n')
+        f.write(dataset + ";" + str(nInst) + ";" + str(nAttr) + ";" + str(bestPrior) + ";" + method + ";" +
+                str(acc) + ';' + str(auc) + ';' + str(t) + ';' + str(numNodes) + '\n')
 
 
 def evalFolderDatasets():
@@ -55,10 +56,10 @@ def evalFolderDatasets():
     folder = ".\\datasets\\"
     # take only .arff or .csv files
     listFileName = [fileName for fileName in os.listdir(folder) if fileName[-5:] == ".arff" or fileName[-4:] == '.csv']
-    # listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR]
-    listSplitMethods = [DecisionTree.splitKmeans]
+    # listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR, DecisionTree.splitKmeans]
+    listSplitMethods = [DecisionTree.splitLR]
 
-    for fileName in listFileName:
+    for fileName in listFileName[:]:
         X, y = readFile(folder + fileName)
 
         # meta info about the dataset (numInstances, numAttributes, nClasses...)
@@ -90,16 +91,20 @@ def evalFolderDatasets():
                 dt = DecisionTree(splitMethodName=method, maxDepth=2)
                 scores = cross_val_score(dt, X, y, cv=8, n_jobs=1)
                 t = time.time() - t
-                print("CV accuracy:", scores.mean())
+                acc = scores.mean()
+                print("CV accuracy:", acc)
                 print("Time:", t)
                 print()
+
+                writeResultsCsv(fileName, len(X), len(X[0]), bestPrior, method, acc, 0, t, 0)
 
             else:
                 # Only to evaluate the first split
                 t = time.time()
-                dt = DecisionTree(splitMethodName=method, maxDepth=2)
+                dt = DecisionTree(splitMethodName=method, maxDepth=0)
                 # dt = DecisionTreeClassifier()
                 dt.fit(X_train, y_train)
+                dt.node.plotSplit()
                 pred = dt.predict(X_test)
                 acc = accuracy_score(y_test, pred)
                 prob = [pr[1] for pr in dt.predict_proba(X_test)]
@@ -113,7 +118,7 @@ def evalFolderDatasets():
                 print()
                 print(dt)
 
-            # writeResultsCsv(fileName, method, acc, auc, t, dt.node.getNumNodes())
+                writeResultsCsv(fileName, len(X), len(X[0]), bestPrior, method, acc, auc, t, dt.node.getNumNodes())
 
         print("################################################################")
         print()
