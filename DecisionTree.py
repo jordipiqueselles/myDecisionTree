@@ -101,13 +101,13 @@ class DecisionTree:
             return self.node.__str__()
 
     def fit(self, X, y):
-        np.random.seed(1)
+        # np.random.seed(1)
         y = self._transClassToIdx(y)
-        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
-        self.nClasses = len(set(y_train))
-        self.node = Node(X_train, y_train, self)
+        # X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+        self.nClasses = len(set(y))
+        self.node = Node(X, y, self)
         self.node.split()
-        self.node.prune(X_test, y_test)
+        # self.node.prune(X_test, y_test)
 
     def predict(self, X):
         assert self.node is not None
@@ -349,29 +349,33 @@ class Node:
 
         def split(self, node):
             (bestGini, bestDecisionFun) = (math.inf, None)
-            for i in range(node.nAttr):
-                for j in range(i + 1, node.nAttr):
-                    self.kmeans.fit(node.X)
-                    idxClusters = self.kmeans.predict(node.X)
-                    # each predicted class represents a future branch
-                    # we need to know, for each instance, in which class it actually belongs to
-                    distrPerBranch = [[0] * node.nClassesNode for _ in range(node.nClassesNode)]
-                    for k in range(len(idxClusters)):
-                        distrPerBranch[idxClusters[k]][node.y[k]] += 1
+            subsets = ittls.combinations(range(node.nAttr), 2)
+            for idxAttr in subsets:
+                xAux = [[instance[attr] for attr in idxAttr] for instance in node.X]
+                self.kmeans.fit(xAux)
+                idxClusters = self.kmeans.predict(xAux)
+                # each predicted class represents a future branch
+                # we need to know, for each instance, in which class it actually belongs to
+                distrPerBranch = [[0] * node.nClassesNode for _ in range(node.nClassesNode)]
+                for k in range(len(idxClusters)):
+                    distrPerBranch[idxClusters[k]][node.y[k]] += 1
 
-                    gini = calcGini(distrPerBranch)
-                    decisionFun = self.KmeansSplitDecisionFun(copy.copy(self.kmeans))
-                    (bestGini, bestDecisionFun) = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
+                gini = calcGini(distrPerBranch)
+                decisionFun = self.KmeansSplitDecisionFun(copy.copy(self.kmeans), idxAttr)
+                (bestGini, bestDecisionFun) = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
 
             return bestGini, 2, bestDecisionFun
 
 
         class KmeansSplitDecisionFun:
-            def __init__(self, kmeans):
+            def __init__(self, kmeans, listAttr):
                 self.kmeans = kmeans
+                self.listAttr = listAttr
 
             def apply(self, instance):
-                return self.kmeans.predict([instance])[0]
+                selectedAttr = [instance[attr] for attr in self.listAttr]
+                return self.kmeans.predict([selectedAttr])[0]
+
 
     class SplitPca(BaseSplit):
         def __init__(self):
@@ -411,28 +415,28 @@ class Node:
         def split(self, node):
             nIter = node.nAttr
             (bestGini, bestDecisionFun, bestDistr) = (math.inf, None, None)
-            for i in range(node.nAttr):
-                for j in range(i+1, node.nAttr):
-                    # select some attributes randomly
-                    # idxAttr = [rnd.randint(0, node.nAttr-1) for _ in range(self.nVars)]
-                    idxAttr = [i, j]
-                    xAux = [[instance[attr] for attr in idxAttr] for instance in node.X]
-                    self.lr.fit(xAux, node.y)
-                    yPred = self.lr.predict(xAux)
-                    # each predicted class represents a future branch
-                    # we need to know, for each instance, in which class it actually belongs to
-                    distrPerBranch = [[0]*node.nClassesNode for _ in range(node.nClassesNode)]
-                    for k in range(len(yPred)):
-                        distrPerBranch[yPred[k]][node.y[k]] += 1
+            subsets = ittls.combinations(range(node.nAttr), 2)
+            for idxAttr in subsets:
+                # select some attributes randomly
+                # idxAttr = [rnd.randint(0, node.nAttr-1) for _ in range(self.nVars)]
+                # idxAttr = [i, j]
+                xAux = [[instance[attr] for attr in idxAttr] for instance in node.X]
+                self.lr.fit(xAux, node.y)
+                yPred = self.lr.predict(xAux)
+                # each predicted class represents a future branch
+                # we need to know, for each instance, in which class it actually belongs to
+                distrPerBranch = [[0]*node.nClassesNode for _ in range(node.nClassesNode)]
+                for k in range(len(yPred)):
+                    distrPerBranch[yPred[k]][node.y[k]] += 1
 
-                    # TODO It should support an split that gives some empty branches, but not only one branch
-                    if all((sum(branch) > 0 for branch in distrPerBranch)):
-                        gini = node.parentTree.splitCriteria(distrPerBranch)
-                        copyLr = copy.copy(self.lr)
-                        # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], idxAttr))[0]
-                        decisionFun = self.SplitLrDecisionFun(copyLr, idxAttr)
-                        (bestGini, bestDecisionFun, bestDistr) = min((gini, decisionFun, distrPerBranch),
-                                                                     (bestGini, bestDecisionFun, bestDistr), key=lambda x: x[0])
+                # TODO It should support an split that gives some empty branches, but not only one branch
+                if all((sum(branch) > 0 for branch in distrPerBranch)):
+                    gini = node.parentTree.splitCriteria(distrPerBranch)
+                    copyLr = copy.copy(self.lr)
+                    # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], idxAttr))[0]
+                    decisionFun = self.SplitLrDecisionFun(copyLr, idxAttr)
+                    (bestGini, bestDecisionFun, bestDistr) = min((gini, decisionFun, distrPerBranch),
+                                                                 (bestGini, bestDecisionFun, bestDistr), key=lambda x: x[0])
 
             return bestGini, node.nClassesNode, bestDecisionFun
 
@@ -442,8 +446,8 @@ class Node:
                 self.listAttr = listAttr
 
             def apply(self, instance):
-                attr = [instance[attr] for attr in self.listAttr]
-                return self.lr.predict([attr])[0]
+                selectedAttr = [instance[attr] for attr in self.listAttr]
+                return self.lr.predict([selectedAttr])[0]
 
 
     class SplitStd(BaseSplit):

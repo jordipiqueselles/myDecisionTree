@@ -87,7 +87,7 @@ def evalFolderDatasets():
             if False:
                 # Evaluate the classifier using 10-fold cross-validation
                 t = time.time()
-                dt = DecisionTree(splitMethodName=method, maxDepth=0)
+                dt = DecisionTree(splitMethodName=method, maxDepth=2)
                 scores = cross_val_score(dt, X, y, cv=8, n_jobs=1)
                 t = time.time() - t
                 print("CV accuracy:", scores.mean())
@@ -97,7 +97,7 @@ def evalFolderDatasets():
             else:
                 # Only to evaluate the first split
                 t = time.time()
-                dt = DecisionTree(splitMethodName=method, maxDepth=30)
+                dt = DecisionTree(splitMethodName=method, maxDepth=2)
                 # dt = DecisionTreeClassifier()
                 dt.fit(X_train, y_train)
                 pred = dt.predict(X_test)
