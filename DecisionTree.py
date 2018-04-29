@@ -271,7 +271,8 @@ class Node:
 
     def plotSplit(self):
         if self.decisionFun is not None:
-            if isinstance(self.decisionFun, self.SplitLr.SplitLrDecisionFun):
+            if isinstance(self.decisionFun, self.SplitLr.SplitLrDecisionFun) or \
+                    isinstance(self.decisionFun, self.SplitKmeans.KmeansSplitDecisionFun):
                 plt.figure()
                 xAux = [[instance[attr] for attr in self.decisionFun.listAttr] for instance in self.X]
                 x1 = [instance[0] for instance in xAux]
@@ -281,6 +282,9 @@ class Node:
                 x = [min(x1), max(x1)]
                 y = [x[0]*m + n, x[1]*m + n]
                 plt.plot(x, y)
+                if isinstance(self.decisionFun, self.SplitKmeans.KmeansSplitDecisionFun):
+                    aux = self.decisionFun.kmeans.cluster_centers_.transpose()
+                    plt.scatter(aux[0], aux[1], marker='x')
                 plt.show()
 
             elif isinstance(self.decisionFun, self.BaseSplit.BaseSplitDecisionFun):
@@ -422,6 +426,13 @@ class Node:
                 selectedAttr = [instance[attr] for attr in self.listAttr]
                 return self.kmeans.predict([selectedAttr])[0]
 
+            def getSplitLine(self):
+                assert self.kmeans.n_clusters == 2
+                v = self.kmeans.cluster_centers_[0] - self.kmeans.cluster_centers_[1]
+                m = - v[0] / v[1]
+                halfPoint = np.mean(self.kmeans.cluster_centers_, axis=0)
+                n = halfPoint[1] - m*halfPoint[0]
+                return m, n
 
     class SplitPca(BaseSplit):
         def __init__(self):
