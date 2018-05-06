@@ -66,6 +66,7 @@ class DecisionTree:
     splitLR = "splitLR"
     splitStd = "splitStd"
     splitKmeans = "splitKmeans"
+    splitKmeansDp = "splitKmeansDp"
 
     # set log level
     def __init__(self, splitMethodName=splitStd, minGiniReduction=0.001, maxDepth=30, minNodeSize=10, minGini=0.01, splitCriteria=calcEntropy):
@@ -81,6 +82,8 @@ class DecisionTree:
             self.splitMethod = Node.SplitPca()
         elif splitMethodName == DecisionTree.splitKmeans:
             self.splitMethod = Node.SplitKmeans()
+        elif splitMethodName == DecisionTree.splitKmeansDp:
+            self.splitMethod = Node.SplitKmeansDp()
         else:
             raise ValueError("Invalid splitMethod: " + splitMethodName)
 
@@ -372,6 +375,104 @@ class Node:
             def apply(self, instance):
                 return instance[self.listAttr] <= self.splitPoint
 
+
+    class SplitKmeansDp(BaseSplit):
+        def __init__(self):
+            self.maxClusters = 10
+
+        def split(self, node):
+            bestGini = math.inf
+            for idxAttr in range(node.nAttr):
+                xAux = sorted((instance[idxAttr] for instance in node.X))
+
+                nElems = len(xAux)
+                mean = xAux[0]
+                # listVarLast[i] contains the variance of the cluster formed by the elements in the range [0, i]
+                listVarLast = [0] * nElems
+                for i in range(1, nElems):
+                    # "i" points to the next element that we'll add to the clustering, but it's also the number
+                    # of elements we have in our clustering (listVarLast[i])
+                    newMean = (i * mean + xAux[i]) / (i+1)
+                    # The new variance is the change of the variance of the current points in [0, i-1] due to the change
+                    # of the mean (newMean - mean)**2 plus the variance the new point "i" adds to the overall clustering
+                    listVarLast[i] = listVarLast[i-1] + i * (newMean - mean)**2 + (xAux[i] - newMean)**2
+                    mean = newMean
+
+                # We will find the optimum clustering for k=2 clusters to k = maxClusters - 1
+                clustNow = [[0] for _ in range(nElems)]
+                clustLast = [[0] for _ in range(nElems)]
+                bestScore = math.inf
+                for k in range(2, self.maxClusters):
+                    listVarNow = [0] * nElems
+                    # For each sublist of xAux that goes from 0 to i, [0, i], we will find the optimum clustering
+                    for i in range(k-1, nElems):
+                        # The mean and the variance of the cluster [j, i]
+                        mean = xAux[i]
+                        var = 0
+                        bestVar = listVarLast[i-1] + var
+                        bestJ = i
+
+                        for j in reversed(range(k-1, i)):
+                            newMean = ((i - j) * mean + xAux[j]) / (i - j + 1)
+                            var = var + (i - j) * (newMean - mean)**2 + (xAux[j] - newMean)**2
+                            if listVarLast[j-1] + var < bestVar:
+                                bestVar = listVarLast[j-1] + var
+                                bestJ = j
+                            mean = newMean
+
+                        listVarNow[i] = bestVar
+                        clustNow[i] = clustLast[bestJ] + [bestJ]
+                    listVarLast = listVarNow.copy()
+                    clustLast = clustNow.copy()
+
+                    # Calculate the cluster centers from the limit points
+                    centers = np.zeros((k, 1))
+                    for i in range(len(clustLast[-1]) - 1):
+                        iniPoint = clustLast[-1][i]
+                        endPoint = clustLast[-1][i+1]
+                        centers[i,0] = sum(xAux[iniPoint:endPoint]) / (endPoint - iniPoint)
+                    iniPoint = clustLast[-1][-1]
+                    centers[-1,0] = sum(xAux[iniPoint:nElems]) / (nElems - iniPoint)
+
+                    # Classify the points of xAux to evaluate the silhouette score
+                    kmeans = KMeans(n_clusters=k)
+                    kmeans.cluster_centers_ = centers
+                    npX = np.array(xAux).reshape(-1, 1)
+                    cl = kmeans.predict(npX)
+                    score = silhouette_score(npX, cl)
+                    if score < bestScore:
+                        score = bestScore
+                        decisionFun = self.SplitKmeansDpDecisionFun(centers, idxAttr)
+                        nFinalClust = k - 1
+                    else:
+                        break
+
+                # each predicted class represents a future branch
+                # we need to know, for each instance, in which class it actually belongs to
+                idxClusters = [decisionFun.apply(instance) for instance in node.X]
+                distrPerBranch = [[0] * node.nClassesNode for _ in range(nFinalClust)]
+                for k in range(len(idxClusters)):
+                    distrPerBranch[idxClusters[k]][node.y[k]] += 1
+
+                gini = calcGini(distrPerBranch)
+                if gini < bestGini:
+                    bestGini = gini
+                    bestNClust = nFinalClust
+                    bestDecisionFun = decisionFun
+
+            return bestGini, bestNClust, bestDecisionFun
+
+
+        class SplitKmeansDpDecisionFun:
+            def __init__(self, centers, attr):
+                self.kmeans = KMeans()
+                self.kmeans.cluster_centers_ = centers
+                self.attr = attr
+
+            def apply(self, instance):
+                return self.kmeans.predict([instance[self.attr]])[0]
+
+
     class SplitKmeans(BaseSplit):
         def __init__(self):
             self.kmeans = KMeans(n_clusters=2)
@@ -464,6 +565,7 @@ class Node:
             def apply(self, instance):
                 return self.decFun.apply(self.pca.transform(self.scaler.transform([instance]))[0])
 
+    # TODO Try the same but using a SVM
     class SplitLr(BaseSplit):
         def __init__(self):
             self.nVars = 2
@@ -489,6 +591,9 @@ class Node:
                 # TODO It should support an split that gives some empty branches, but not only one branch
                 if all((sum(branch) > 0 for branch in distrPerBranch)):
                     gini = node.parentTree.splitCriteria(distrPerBranch)
+                    # logProb = self.lr.predict_log_proba(xAux)
+                    # res = (-node.y[i] * logProb[i][1] - (1 - node.y[i]) * logProb[i][0] for i in range(len(node.y)))
+                    # gini = sum(filter(lambda x: not np.isnan(x), res)) / len(node.y)
                     copyLr = copy.copy(self.lr)
                     # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], idxAttr))[0]
                     decisionFun = self.SplitLrDecisionFun(copyLr, idxAttr)
