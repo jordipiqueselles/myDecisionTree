@@ -401,8 +401,10 @@ class Node:
                 # We will find the optimum clustering for k=2 clusters to k = maxClusters - 1
                 clustNow = [[0] for _ in range(nElems)]
                 clustLast = [[0] for _ in range(nElems)]
-                bestScore = math.inf
-                for k in range(2, self.maxClusters):
+                bestScore = -1
+                # There cannot be more clusters than different values in the dataset
+                auxMaxClusters = min(self.maxClusters, len(set(xAux))+1)
+                for k in range(2, auxMaxClusters):
                     listVarNow = [0] * nElems
                     # For each sublist of xAux that goes from 0 to i, [0, i], we will find the optimum clustering
                     for i in range(k-1, nElems):
@@ -421,7 +423,7 @@ class Node:
                             mean = newMean
 
                         listVarNow[i] = bestVar
-                        clustNow[i] = clustLast[bestJ] + [bestJ]
+                        clustNow[i] = clustLast[bestJ-1] + [bestJ]
                     listVarLast = listVarNow.copy()
                     clustLast = clustNow.copy()
 
@@ -430,7 +432,7 @@ class Node:
                     for i in range(len(clustLast[-1]) - 1):
                         iniPoint = clustLast[-1][i]
                         endPoint = clustLast[-1][i+1]
-                        centers[i,0] = sum(xAux[iniPoint:endPoint]) / (endPoint - iniPoint)
+                        centers[i,0] = sum(xAux[iniPoint:endPoint]) / (endPoint - iniPoint)  # Division by 0
                     iniPoint = clustLast[-1][-1]
                     centers[-1,0] = sum(xAux[iniPoint:nElems]) / (nElems - iniPoint)
 
@@ -440,10 +442,10 @@ class Node:
                     npX = np.array(xAux).reshape(-1, 1)
                     cl = kmeans.predict(npX)
                     score = silhouette_score(npX, cl)
-                    if score < bestScore:
-                        score = bestScore
+                    if score > bestScore:
+                        bestScore = score
                         decisionFun = self.SplitKmeansDpDecisionFun(centers, idxAttr)
-                        nFinalClust = k - 1
+                        nFinalClust = k
                     else:
                         break
 
@@ -470,7 +472,7 @@ class Node:
                 self.attr = attr
 
             def apply(self, instance):
-                return self.kmeans.predict([instance[self.attr]])[0]
+                return self.kmeans.predict([[instance[self.attr]]])[0]
 
 
     class SplitKmeans(BaseSplit):
