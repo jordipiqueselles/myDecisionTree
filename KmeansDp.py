@@ -11,13 +11,17 @@ class KmeansDp:
 
     def fit(self, X, optimum=False):
         # TODO Check dimensionality of X
-        self.X = X
         # There cannot be more clusters than different values in the dataset
-        if self.nClusters > len(set(self.X)):
-            raise ValueError("The number of clusters is greater than the number of different elements in X")
+        nMaxClusters = min(self.nClusters, len(set(X))) + 1
+        if nMaxClusters < 3:
+            mean = sum(X) / len(X)
+            self.kmeans.cluster_centers_ = np.array([[mean]])
+            return self.kmeans.cluster_centers_
 
-        self.X.sort()
-        nElems = len(self.X)
+        nElems = len(X)
+        X.sort()
+        self.X = X
+        xArray = np.array(X).reshape(-1, 1)
 
         # listVar[i] contains the variance of the cluster formed by the elements in the range [0, i]
         listVar = self._initListVar()
@@ -25,14 +29,15 @@ class KmeansDp:
         iniClust = [[0] for _ in range(nElems)]
         lastScore = -1
 
-        for k in range(2, self.nClusters + 1):
+        for k in range(2, nMaxClusters):
             listVar, iniClust = self._computeVariance(k, listVar, iniClust)
 
             if optimum:
                 # Evaluate the goodness of the clustering
                 auxKmeans = KMeans()
-                cl = auxKmeans.predict(self.X)
-                score = silhouette_score(self.X, cl)
+                auxKmeans.cluster_centers_ = self._calculateCenters(iniClust)
+                cl = auxKmeans.predict(xArray)
+                score = silhouette_score(xArray, cl)
                 if lastScore >= score:
                     # No increase in goodness of the clustering
                     break
@@ -40,7 +45,10 @@ class KmeansDp:
 
         if not optimum:
             # Calculate the cluster centers from the limit points
-            self.kmeans.cluster_centers_ = self._calculateCenters(self.nClusters, iniClust)
+            self.kmeans.cluster_centers_ = self._calculateCenters(iniClust)
+
+        self.X = None
+        return self.kmeans.cluster_centers_
 
     def predict(self, X):
         return self.kmeans.predict(X)
@@ -57,6 +65,7 @@ class KmeansDp:
             # of the mean (newMean - mean)**2 plus the variance the new point "i" adds to the overall clustering
             listVar[i] = listVar[i - 1] + i * (newMean - mean) ** 2 + (self.X[i] - newMean) ** 2
             mean = newMean
+        return listVar
 
     def _computeVariance(self, k, listVar, iniClust):
         nElems = len(self.X)
@@ -83,8 +92,9 @@ class KmeansDp:
 
         return listVarNew, iniClustNew
 
-    def _calculateCenters(self, nClusters, iniClust):
+    def _calculateCenters(self, iniClust):
         nElems = len(self.X)
+        nClusters = len(iniClust[-1])
         centers = np.zeros((nClusters, 1))
         for i in range(len(iniClust[-1]) - 1):
             iniPoint = iniClust[-1][i]
@@ -92,3 +102,4 @@ class KmeansDp:
             centers[i, 0] = sum(self.X[iniPoint:endPoint]) / (endPoint - iniPoint)
         iniPoint = iniClust[-1][-1]
         centers[-1, 0] = sum(self.X[iniPoint:nElems]) / (nElems - iniPoint)
+        return centers

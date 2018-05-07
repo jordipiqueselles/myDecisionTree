@@ -59,7 +59,7 @@ def evalFolderDatasets():
     # listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR, DecisionTree.splitKmeans]
     listSplitMethods = [DecisionTree.splitKmeansDp]
 
-    for fileName in listFileName[:]:
+    for fileName in listFileName[1:]:
         X, y = readFile(folder + fileName)
 
         # meta info about the dataset (numInstances, numAttributes, nClasses...)
