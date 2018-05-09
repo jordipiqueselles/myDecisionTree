@@ -17,6 +17,8 @@ from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
 from KmeansDp import KmeansDp
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.svm import LinearSVC
 
 # Auxiliar functions #
 
@@ -63,9 +65,11 @@ def calcCountsClasses(y, nClasses):
 
 class DecisionTree:
     # string values of the class to distiguish the different methods available to split a node
+    splitStd = "splitStd"
     splitPca = "splitPca"
     splitLR = "splitLR"
-    splitStd = "splitStd"
+    splitLD = "splitLD"
+    splitSVM = "splitSVM"
     splitKmeans = "splitKmeans"
     splitKmeansDp = "splitKmeansDp"
 
@@ -78,7 +82,11 @@ class DecisionTree:
         if splitMethodName == DecisionTree.splitStd:
             self.splitMethod = Node.SplitStd()
         elif splitMethodName == DecisionTree.splitLR:
-            self.splitMethod = Node.SplitLr()
+            self.splitMethod = Node.SplitHyperplane(LogisticRegression(C=99999999))
+        elif splitMethodName == DecisionTree.splitLD:
+            self.splitMethod = Node.SplitHyperplane(LinearDiscriminantAnalysis())
+        elif splitMethodName == DecisionTree.splitSVM:
+            self.splitMethod = Node.SplitHyperplane(LinearSVC())
         elif splitMethodName == DecisionTree.splitPca:
             self.splitMethod = Node.SplitPca()
         elif splitMethodName == DecisionTree.splitKmeans:
@@ -275,7 +283,7 @@ class Node:
 
     def plotSplit(self):
         if self.decisionFun is not None:
-            if isinstance(self.decisionFun, self.SplitLr.SplitLrDecisionFun) or \
+            if isinstance(self.decisionFun, self.SplitHyperplane.SplitHyperplaneDecisionFun) or \
                     isinstance(self.decisionFun, self.SplitKmeans.KmeansSplitDecisionFun):
                 plt.figure()
                 xAux = [[instance[attr] for attr in self.decisionFun.listAttr] for instance in self.X]
@@ -406,7 +414,6 @@ class Node:
 
             return bestGini, bestNClust, bestDecisionFun
 
-
         class SplitKmeansDpDecisionFun:
             def __init__(self, kmeans, attr):
                 self.kmeans = kmeans
@@ -509,10 +516,10 @@ class Node:
                 return self.decFun.apply(self.pca.transform(self.scaler.transform([instance]))[0])
 
     # TODO Try the same but using a SVM
-    class SplitLr(BaseSplit):
-        def __init__(self):
+    class SplitHyperplane(BaseSplit):
+        def __init__(self, classifier):
             self.nVars = 2
-            self.lr = LogisticRegression(C=999999)
+            self.classifier = classifier
 
         def split(self, node):
             nIter = node.nAttr
@@ -523,8 +530,11 @@ class Node:
                 # idxAttr = [rnd.randint(0, node.nAttr-1) for _ in range(self.nVars)]
                 # idxAttr = [i, j]
                 xAux = [[instance[attr] for attr in idxAttr] for instance in node.X]
-                self.lr.fit(xAux, node.y)
-                yPred = self.lr.predict(xAux)
+                try:
+                    self.classifier.fit(xAux, node.y)
+                except:
+                    continue
+                yPred = self.classifier.predict(xAux)
                 # each predicted class represents a future branch
                 # we need to know, for each instance, in which class it actually belongs to
                 distrPerBranch = [[0]*node.nClassesNode for _ in range(node.nClassesNode)]
@@ -537,27 +547,27 @@ class Node:
                     # logProb = self.lr.predict_log_proba(xAux)
                     # res = (-node.y[i] * logProb[i][1] - (1 - node.y[i]) * logProb[i][0] for i in range(len(node.y)))
                     # gini = sum(filter(lambda x: not np.isnan(x), res)) / len(node.y)
-                    copyLr = copy.copy(self.lr)
+                    copyLr = copy.copy(self.classifier)
                     # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], idxAttr))[0]
-                    decisionFun = self.SplitLrDecisionFun(copyLr, idxAttr)
+                    decisionFun = self.SplitHyperplaneDecisionFun(copyLr, idxAttr)
                     (bestGini, bestDecisionFun, bestDistr) = min((gini, decisionFun, distrPerBranch),
                                                                  (bestGini, bestDecisionFun, bestDistr), key=lambda x: x[0])
 
             return bestGini, node.nClassesNode, bestDecisionFun
 
-        class SplitLrDecisionFun:
-            def __init__(self, lr, listAttr):
-                self.lr = lr
+        class SplitHyperplaneDecisionFun:
+            def __init__(self, classifier, listAttr):
+                self.classifier = classifier
                 self.listAttr = listAttr
 
             def apply(self, instance):
                 selectedAttr = [instance[attr] for attr in self.listAttr]
-                return self.lr.predict([selectedAttr])[0]
+                return self.classifier.predict([selectedAttr])[0]
 
             def getSplitLine(self):
-                k1 = self.lr.coef_[0][0]
-                k2 = self.lr.coef_[0][1]
-                c = self.lr.intercept_
+                k1 = self.classifier.coef_[0][0]
+                k2 = self.classifier.coef_[0][1]
+                c = self.classifier.intercept_
                 m = -k1/k2
                 n = -c/k2
                 return m, n
