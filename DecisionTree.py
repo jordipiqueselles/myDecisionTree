@@ -379,7 +379,7 @@ class Node:
 
     class SplitKmeansDp(BaseSplit):
         def __init__(self):
-            self.maxClusters = 10
+            self.maxClusters = 5
 
         def split(self, node):
             bestGini = math.inf

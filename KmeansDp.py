@@ -12,7 +12,7 @@ class KmeansDp:
     def fit(self, X, optimum=False):
         # TODO Check dimensionality of X
         # There cannot be more clusters than different values in the dataset
-        nMaxClusters = min(self.nClusters, len(set(X))) + 1
+        nMaxClusters = min(self.nClusters, len(set(X)) // 2) + 1
         if nMaxClusters < 3:
             mean = sum(X) / len(X)
             self.kmeans.cluster_centers_ = np.array([[mean]])
