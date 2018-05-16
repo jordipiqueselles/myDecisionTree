@@ -57,7 +57,8 @@ def evalFolderDatasets():
     # take only .arff or .csv files
     listFileName = [fileName for fileName in os.listdir(folder) if fileName[-5:] == ".arff" or fileName[-4:] == '.csv']
     # listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR, DecisionTree.splitKmeans]
-    listSplitMethods = [DecisionTree.splitSVM]
+    # listSplitMethods = [DecisionTree.splitSVM, DecisionTree.splitLD]
+    listSplitMethods = [DecisionTree.splitLD] # debug KmeansDp
 
     for fileName in listFileName[:]:
         X, y = readFile(folder + fileName)
@@ -89,7 +90,7 @@ def evalFolderDatasets():
                 # Evaluate the classifier using 10-fold cross-validation
                 t = time.time()
                 dt = DecisionTree(splitMethodName=method, maxDepth=2)
-                scores = cross_val_score(dt, X, y, cv=8, n_jobs=1)
+                scores = cross_val_score(dt, X, y, cv=8, n_jobs=8)
                 t = time.time() - t
                 acc = scores.mean()
                 print("CV accuracy:", acc)
@@ -104,7 +105,7 @@ def evalFolderDatasets():
                 dt = DecisionTree(splitMethodName=method, maxDepth=2)
                 # dt = DecisionTreeClassifier()
                 dt.fit(X_train, y_train)
-                # dt.node.plotSplit()
+                dt.node.plotSplit()
                 pred = dt.predict(X_test)
                 acc = accuracy_score(y_test, pred)
                 prob = [pr[1] for pr in dt.predict_proba(X_test)]

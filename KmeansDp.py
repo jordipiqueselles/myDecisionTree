@@ -12,7 +12,7 @@ class KmeansDp:
     def fit(self, X, optimum=False):
         # TODO Check dimensionality of X
         # There cannot be more clusters than different values in the dataset
-        nMaxClusters = min(self.nClusters, len(set(X)) // 2) + 1
+        nMaxClusters = min(self.nClusters, len(set(X))) + 1
         if nMaxClusters < 3:
             mean = sum(X) / len(X)
             self.kmeans.cluster_centers_ = np.array([[mean]])
@@ -31,6 +31,7 @@ class KmeansDp:
 
         for k in range(2, nMaxClusters):
             listVar, iniClust = self._computeVariance(k, listVar, iniClust)
+            assert len(iniClust[-1]) == k
 
             if optimum:
                 # Evaluate the goodness of the clustering
@@ -96,7 +97,7 @@ class KmeansDp:
         nElems = len(self.X)
         nClusters = len(iniClust[-1])
         centers = np.zeros((nClusters, 1))
-        for i in range(len(iniClust[-1]) - 1):
+        for i in range(nClusters - 1):
             iniPoint = iniClust[-1][i]
             endPoint = iniClust[-1][i + 1]
             centers[i, 0] = sum(self.X[iniPoint:endPoint]) / (endPoint - iniPoint)

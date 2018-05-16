@@ -373,7 +373,6 @@ class Node:
                     bestGini, splitPoint = min((newGini, (attr_ant+attr)/2), (bestGini, splitPoint))
                 (attr_ant, clss_ant) = (attr, clss)
 
-            # TODO Instead of returning a lambda, I could return an object of class DecisionFunction that can bring more information about the split
             return bestGini, cls.BaseSplitDecisionFun(idxAttr, splitPoint)  # lambda instance: instance[idxAttr] <= splitPoint
 
         class BaseSplitDecisionFun:
@@ -515,7 +514,6 @@ class Node:
             def apply(self, instance):
                 return self.decFun.apply(self.pca.transform(self.scaler.transform([instance]))[0])
 
-    # TODO Try the same but using a SVM
     class SplitHyperplane(BaseSplit):
         def __init__(self, classifier):
             self.nVars = 2
@@ -563,6 +561,54 @@ class Node:
             def apply(self, instance):
                 selectedAttr = [instance[attr] for attr in self.listAttr]
                 return self.classifier.predict([selectedAttr])[0]
+
+            def getSplitLine(self):
+                k1 = self.classifier.coef_[0][0]
+                k2 = self.classifier.coef_[0][1]
+                c = self.classifier.intercept_
+                m = -k1/k2
+                n = -c/k2
+                return m, n
+
+    class SplitHyperplaneAdv(BaseSplit):
+        def __init__(self, classifier):
+            self.nVars = 2
+            self.classifier = classifier
+
+        def split(self, node):
+            (bestGini, bestDecisionFun, bestDistr) = (math.inf, None, None)
+            subsets = ittls.combinations(range(node.nAttr), 2)
+            for idxAttr in subsets:
+                xAux = [[instance[attr] for attr in idxAttr] for instance in node.X]
+                try:
+                    self.classifier.fit(xAux, node.y)
+                except:
+                    continue
+
+                xTrans = [self.SplitHyperplaneAvdDecisionFun._transformX(self.classifier, instance) for instance in xAux]
+                gini, decisionFun = self._numericSplit(xTrans, node.y, 0, node)
+                decisionFun = self.SplitHyperplaneAvdDecisionFun(self.classifier, idxAttr, decisionFun)
+                bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
+
+            return bestGini, node.nClassesNode, bestDecisionFun
+
+        class SplitHyperplaneAvdDecisionFun:
+            def __init__(self, classifier, listAttr, baseDecisionFun):
+                self.classifier = classifier
+                self.listAttr = listAttr
+                self.baseDecisionFun = baseDecisionFun
+
+            def apply(self, instance):
+                selectedAttr = [instance[attr] for attr in self.listAttr]
+                transAttr = self._transformX(self.classifier, selectedAttr)
+                return self.baseDecisionFun.apply(transAttr)
+
+            @staticmethod
+            def _transformX(classifier, instance):
+                coef = classifier.coef_
+                bias = classifier.intercept_
+                npInst = np.array(instance)
+                return np.dot(coef, npInst) + bias
 
             def getSplitLine(self):
                 k1 = self.classifier.coef_[0][0]
