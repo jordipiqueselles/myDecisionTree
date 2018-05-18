@@ -72,6 +72,9 @@ class DecisionTree:
     splitSVM = "splitSVM"
     splitKmeans = "splitKmeans"
     splitKmeansDp = "splitKmeansDp"
+    splitLRAdv = "splitLRAdv"
+    splitLDAdv = "splitLDAdv"
+    splitSVMAdv = "splitSVMAdv"
 
     # set log level
     def __init__(self, splitMethodName=splitStd, minGiniReduction=0.001, maxDepth=30, minNodeSize=10, minGini=0.01, splitCriteria=calcEntropy):
@@ -87,6 +90,12 @@ class DecisionTree:
             self.splitMethod = Node.SplitHyperplane(LinearDiscriminantAnalysis())
         elif splitMethodName == DecisionTree.splitSVM:
             self.splitMethod = Node.SplitHyperplane(LinearSVC())
+        elif splitMethodName == DecisionTree.splitLRAdv:
+            self.splitMethod = Node.SplitHyperplaneAdv(LogisticRegression(C=99999999))
+        elif splitMethodName == DecisionTree.splitLDAdv:
+            self.splitMethod = Node.SplitHyperplaneAdv(LinearDiscriminantAnalysis())
+        elif splitMethodName == DecisionTree.splitSVMAdv:
+            self.splitMethod = Node.SplitHyperplaneAdv(LinearSVC())
         elif splitMethodName == DecisionTree.splitPca:
             self.splitMethod = Node.SplitPca()
         elif splitMethodName == DecisionTree.splitKmeans:
@@ -373,6 +382,7 @@ class Node:
                     bestGini, splitPoint = min((newGini, (attr_ant+attr)/2), (bestGini, splitPoint))
                 (attr_ant, clss_ant) = (attr, clss)
 
+            assert sortedAttr[0][0] <= splitPoint < sortedAttr[-1][0]
             return bestGini, cls.BaseSplitDecisionFun(idxAttr, splitPoint)  # lambda instance: instance[idxAttr] <= splitPoint
 
         class BaseSplitDecisionFun:
@@ -520,13 +530,9 @@ class Node:
             self.classifier = classifier
 
         def split(self, node):
-            nIter = node.nAttr
             (bestGini, bestDecisionFun, bestDistr) = (math.inf, None, None)
             subsets = ittls.combinations(range(node.nAttr), 2)
             for idxAttr in subsets:
-                # select some attributes randomly
-                # idxAttr = [rnd.randint(0, node.nAttr-1) for _ in range(self.nVars)]
-                # idxAttr = [i, j]
                 xAux = [[instance[attr] for attr in idxAttr] for instance in node.X]
                 try:
                     self.classifier.fit(xAux, node.y)
@@ -542,9 +548,6 @@ class Node:
                 # TODO It should support an split that gives some empty branches, but not only one branch
                 if all((sum(branch) > 0 for branch in distrPerBranch)):
                     gini = node.parentTree.splitCriteria(distrPerBranch)
-                    # logProb = self.lr.predict_log_proba(xAux)
-                    # res = (-node.y[i] * logProb[i][1] - (1 - node.y[i]) * logProb[i][0] for i in range(len(node.y)))
-                    # gini = sum(filter(lambda x: not np.isnan(x), res)) / len(node.y)
                     copyLr = copy.copy(self.classifier)
                     # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], idxAttr))[0]
                     decisionFun = self.SplitHyperplaneDecisionFun(copyLr, idxAttr)
@@ -585,14 +588,14 @@ class Node:
                 except:
                     continue
 
-                xTrans = [self.SplitHyperplaneAvdDecisionFun._transformX(self.classifier, instance) for instance in xAux]
+                xTrans = [self.SplitHyperplaneAdvDecisionFun.transformX(self.classifier, instance) for instance in xAux]
                 gini, decisionFun = self._numericSplit(xTrans, node.y, 0, node)
-                decisionFun = self.SplitHyperplaneAvdDecisionFun(self.classifier, idxAttr, decisionFun)
+                decisionFun = self.SplitHyperplaneAdvDecisionFun(copy.copy(self.classifier), idxAttr, decisionFun)
                 bestGini, bestDecisionFun = min((gini, decisionFun), (bestGini, bestDecisionFun), key=lambda x: x[0])
 
             return bestGini, node.nClassesNode, bestDecisionFun
 
-        class SplitHyperplaneAvdDecisionFun:
+        class SplitHyperplaneAdvDecisionFun:
             def __init__(self, classifier, listAttr, baseDecisionFun):
                 self.classifier = classifier
                 self.listAttr = listAttr
@@ -600,11 +603,11 @@ class Node:
 
             def apply(self, instance):
                 selectedAttr = [instance[attr] for attr in self.listAttr]
-                transAttr = self._transformX(self.classifier, selectedAttr)
+                transAttr = self.transformX(self.classifier, selectedAttr)
                 return self.baseDecisionFun.apply(transAttr)
 
             @staticmethod
-            def _transformX(classifier, instance):
+            def transformX(classifier, instance):
                 coef = classifier.coef_
                 bias = classifier.intercept_
                 npInst = np.array(instance)

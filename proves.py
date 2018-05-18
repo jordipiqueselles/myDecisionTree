@@ -58,7 +58,7 @@ def evalFolderDatasets():
     listFileName = [fileName for fileName in os.listdir(folder) if fileName[-5:] == ".arff" or fileName[-4:] == '.csv']
     # listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR, DecisionTree.splitKmeans]
     # listSplitMethods = [DecisionTree.splitSVM, DecisionTree.splitLD]
-    listSplitMethods = [DecisionTree.splitLD] # debug KmeansDp
+    listSplitMethods = [DecisionTree.splitLDAdv] # debug KmeansDp
 
     for fileName in listFileName[:]:
         X, y = readFile(folder + fileName)
