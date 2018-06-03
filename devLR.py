@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+import logging as log
 
 ## The function I will apply to z ##
 
@@ -23,11 +24,13 @@ def derInvCub(z, k=1):
 #########################################
 
 class MyLR:
-    def __init__(self, fun=invCub, derFun=derInvCub, alfa=0.2):
+    def __init__(self, fun=invCub, derFun=derInvCub, alfa=0.15, maxIter=1000, logLevel=log.DEBUG):
         self.fun = fun
         self.derFun = derFun
         self.alfa = alfa
+        self.maxIter = maxIter
         self.B = None
+        log.basicConfig(level=logLevel, format='%(asctime)s %(levelname)s %(message)s')
 
     def fit(self, X, y):
         nInst, nAttr = X.shape
@@ -35,14 +38,19 @@ class MyLR:
         self.B = np.random.rand(1, nAttr + 1) * 2 - 1
         self._gradientDescent(X, y)
 
-    def predict(self):
-        pass
+    def predict(self, X):
+        X = np.append(X, np.ones((len(X), 1)), axis=1)
+        return np.dot(X, self.B.transpose()) >= 0
 
-    def predict_proba(self):
-        pass
+    def predict_proba(self, X):
+        X = np.append(X, np.ones((len(X), 1)), axis=1)
+        Z = np.dot(X, self.B.transpose())
+        funZ = self.fun(Z)
+        prob = self._sigmoid(funZ)
+        return prob
 
     def get_params(self, deep=True):
-        pass
+        return {"fun": self.fun, "derFun": self.derFun, "alfa": self.alfa, "maxIter": self.maxIter, "B": self.B}
 
     def _sigmoid(self, z):
         """
@@ -58,9 +66,9 @@ class MyLR:
         :param B: Column vector of the parameters of the Logistic Regression
         """
         z = np.dot(X, self.B.transpose())
-        cubR = self.fun(z)
-        sig = self._sigmoid(cubR)
-        return -np.dot(y, np.log(sig)) + np.dot(1 - y, np.log(1-sig))
+        funZ = self.fun(z)
+        sig = self._sigmoid(funZ)
+        return -np.dot(y, np.log(sig)) - np.dot(1 - y, np.log(1-sig))
 
     def _derCost(self, X, y):
         """
@@ -87,15 +95,18 @@ class MyLR:
         return np.mean(der, axis=0)
 
     def _gradientDescent(self, X, y):
-        print("Starting iterations")
-        for i in range(1000):
+        log.info("Starting iterations")
+        for i in range(self.maxIter):
             derB = self._derCost(X, y)
             self.B = self.B - self.alfa*derB
-            if i % 10 == 0:
-                print("Iteration", i)
-                print("Cost", self._cost(X, y))
-                print("B", self.B)
-                print("derB", derB)
+            if i % 100 == 0:
+                log.info("Iteration " + str(i))
+                log.info("Cost " + str(self._cost(X, y)))
+                log.info("B " + str(self.B))
+                log.info("derB " + str(derB))
+            if np.linalg.norm(derB) < 0.001:
+                log.info("Stopping at iteration " + str(i))
+                break
 
 def prova():
     # B -> Bi, Bi - 1, ..., B2, B1, B0
