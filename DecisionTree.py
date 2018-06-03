@@ -89,13 +89,13 @@ class DecisionTree:
         elif splitMethodName == DecisionTree.splitLD:
             self.splitMethod = Node.SplitHyperplane(LinearDiscriminantAnalysis())
         elif splitMethodName == DecisionTree.splitSVM:
-            self.splitMethod = Node.SplitHyperplane(LinearSVC())
+            self.splitMethod = Node.SplitHyperplane(LinearSVC(C=0.1))
         elif splitMethodName == DecisionTree.splitLRAdv:
             self.splitMethod = Node.SplitHyperplaneAdv(LogisticRegression(C=99999999))
         elif splitMethodName == DecisionTree.splitLDAdv:
             self.splitMethod = Node.SplitHyperplaneAdv(LinearDiscriminantAnalysis())
         elif splitMethodName == DecisionTree.splitSVMAdv:
-            self.splitMethod = Node.SplitHyperplaneAdv(LinearSVC())
+            self.splitMethod = Node.SplitHyperplaneAdv(LinearSVC(C=0.1))
         elif splitMethodName == DecisionTree.splitPca:
             self.splitMethod = Node.SplitPca()
         elif splitMethodName == DecisionTree.splitKmeans:
@@ -382,8 +382,19 @@ class Node:
                     bestGini, splitPoint = min((newGini, (attr_ant+attr)/2), (bestGini, splitPoint))
                 (attr_ant, clss_ant) = (attr, clss)
 
-            assert sortedAttr[0][0] <= splitPoint < sortedAttr[-1][0]
-            return bestGini, cls.BaseSplitDecisionFun(idxAttr, splitPoint)  # lambda instance: instance[idxAttr] <= splitPoint
+            # when all the points have the same value, no split point can be found
+            if splitPoint is None:
+                return math.inf, None
+            else:
+                assert sortedAttr[0][0] <= splitPoint < sortedAttr[-1][0]
+                return bestGini, cls.BaseSplitDecisionFun(idxAttr, splitPoint)
+
+        @classmethod
+        def _normalizeData(cls, X):
+            npX = np.array(X)
+            stdDev = npX.std(axis=0) + 0.0001  # avoid division by 0
+            npX = npX / stdDev
+            return npX.tolist(), stdDev
 
         class BaseSplitDecisionFun:
             def __init__(self, listAttr, splitPoint):
@@ -530,10 +541,11 @@ class Node:
             self.classifier = classifier
 
         def split(self, node):
+            normX, stdDev = self._normalizeData(node.X)
             (bestGini, bestDecisionFun, bestDistr) = (math.inf, None, None)
             subsets = ittls.combinations(range(node.nAttr), 2)
             for idxAttr in subsets:
-                xAux = [[instance[attr] for attr in idxAttr] for instance in node.X]
+                xAux = [[instance[attr] for attr in idxAttr] for instance in normX]
                 try:
                     self.classifier.fit(xAux, node.y)
                 except:
@@ -550,19 +562,20 @@ class Node:
                     gini = node.parentTree.splitCriteria(distrPerBranch)
                     copyLr = copy.copy(self.classifier)
                     # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], idxAttr))[0]
-                    decisionFun = self.SplitHyperplaneDecisionFun(copyLr, idxAttr)
+                    decisionFun = self.SplitHyperplaneDecisionFun(copyLr, idxAttr, stdDev)
                     (bestGini, bestDecisionFun, bestDistr) = min((gini, decisionFun, distrPerBranch),
                                                                  (bestGini, bestDecisionFun, bestDistr), key=lambda x: x[0])
 
             return bestGini, node.nClassesNode, bestDecisionFun
 
         class SplitHyperplaneDecisionFun:
-            def __init__(self, classifier, listAttr):
+            def __init__(self, classifier, listIdxAttr, stdDev):
                 self.classifier = classifier
-                self.listAttr = listAttr
+                self.listIdxAttr = listIdxAttr
+                self.stdDev = stdDev
 
             def apply(self, instance):
-                selectedAttr = [instance[attr] for attr in self.listAttr]
+                selectedAttr = [instance[idxAttr] / self.stdDev[idxAttr] for idxAttr in self.listIdxAttr]
                 return self.classifier.predict([selectedAttr])[0]
 
             def getSplitLine(self):
