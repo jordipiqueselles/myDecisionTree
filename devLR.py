@@ -1,6 +1,8 @@
+import time
 import numpy as np
 import matplotlib.pyplot as plt
 import logging as log
+from sklearn.linear_model import LogisticRegression
 
 ## The function I will apply to z ##
 
@@ -33,14 +35,26 @@ class MyLR:
         log.basicConfig(level=logLevel, format='%(asctime)s %(levelname)s %(message)s')
 
     def fit(self, X, y):
-        nInst, nAttr = X.shape
+        nInst = len(X)
+        nAttr = len(X[0])
         X = np.append(X, np.ones((nInst, 1)), axis=1)
-        self.B = np.random.rand(1, nAttr + 1) * 2 - 1
+        y = np.reshape(y, (nInst, 1))
+        shuffledIdx = np.array(range(nInst))
+        np.random.shuffle(shuffledIdx)
+        X = X[shuffledIdx]
+        y = y[shuffledIdx]
+        # trampa #
+        # self.B = (np.mean(X*y) - np.mean(X*(1-y), axis=0)).reshape((1,3))
+        lr = LogisticRegression(C=99999999999)
+        lr.fit(X, y.ravel())
+        self.B = lr.coef_
+        ##########
+        # self.B = np.random.rand(1, nAttr + 1) * 2 - 1
         self._gradientDescent(X, y)
 
     def predict(self, X):
         X = np.append(X, np.ones((len(X), 1)), axis=1)
-        return np.dot(X, self.B.transpose()) >= 0
+        return (np.dot(X, self.B.transpose()) >= 0).flatten()
 
     def predict_proba(self, X):
         X = np.append(X, np.ones((len(X), 1)), axis=1)
@@ -56,7 +70,7 @@ class MyLR:
         """
         The sigmoid function (1/(1+e^-z))
         """
-        return 1 / (1 + np.exp(-z))
+        return 1 / (1 + np.exp(-z)) + 0.000001
 
     def _cost(self, X, y):
         """
@@ -68,7 +82,7 @@ class MyLR:
         z = np.dot(X, self.B.transpose())
         funZ = self.fun(z)
         sig = self._sigmoid(funZ)
-        return -np.dot(y, np.log(sig)) - np.dot(1 - y, np.log(1-sig))
+        return -np.dot(y.transpose(), np.log(sig)) - np.dot(1 - y.transpose(), np.log(1-sig))
 
     def _derCost(self, X, y):
         """
@@ -77,8 +91,6 @@ class MyLR:
         :param y: Column vector of classes (0, 1)
         :param B: Column vector of the parameters of the Logistic Regression
         """
-        y = y.transpose()
-
         dz = X
         z = np.dot(X, self.B.transpose())
 
@@ -96,17 +108,30 @@ class MyLR:
 
     def _gradientDescent(self, X, y):
         log.info("Starting iterations")
+        lastCost = np.inf
+        derB = np.zeros(len(X[0]))
         for i in range(self.maxIter):
-            derB = self._derCost(X, y)
-            self.B = self.B - self.alfa*derB
+            # derB = self._derCost(X, y)
+            # self.B = self.B - self.alfa * derB
+
+            batchSize = 20
+            beta = 0.2
+            for batch in range(0, len(X), batchSize):
+                auxDerB = self._derCost(X[batch:batch + batchSize], y[batch:batch + batchSize])
+                derB = (1-beta)*derB + beta*auxDerB
+                self.B = self.B - self.alfa*derB
+
             if i % 100 == 0:
+                cost = self._cost(X, y)
                 log.info("Iteration " + str(i))
-                log.info("Cost " + str(self._cost(X, y)))
+                log.info("Cost " + str(cost))
                 log.info("B " + str(self.B))
                 log.info("derB " + str(derB))
-            if np.linalg.norm(derB) < 0.001:
-                log.info("Stopping at iteration " + str(i))
-                break
+
+                if (lastCost - cost) / cost < 0.05 or np.linalg.norm(derB) < 0.001:
+                    log.info("Stopping at iteration " + str(i))
+                    break
+                lastCost = cost
 
 def prova():
     # B -> Bi, Bi - 1, ..., B2, B1, B0
@@ -128,5 +153,7 @@ def prova():
     # B = np.array([[1], [1], [0]])
 
 if __name__ == '__main__':
+    t = time.time()
     prova()
+    print("Total time:", time.time() - t)
 

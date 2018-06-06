@@ -16,6 +16,10 @@ from sklearn.model_selection import train_test_split
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 from matplotlib.figure import Figure
+import traceback
+import sys
+
+import devLR
 from KmeansDp import KmeansDp
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.svm import LinearSVC
@@ -68,6 +72,7 @@ class DecisionTree:
     splitStd = "splitStd"
     splitPca = "splitPca"
     splitLR = "splitLR"
+    splitMyLR = "splitMyLR"
     splitLD = "splitLD"
     splitSVM = "splitSVM"
     splitKmeans = "splitKmeans"
@@ -86,6 +91,8 @@ class DecisionTree:
             self.splitMethod = Node.SplitStd()
         elif splitMethodName == DecisionTree.splitLR:
             self.splitMethod = Node.SplitHyperplane(LogisticRegression(C=99999999))
+        elif splitMethodName == DecisionTree.splitMyLR:
+            self.splitMethod = Node.SplitHyperplane(devLR.MyLR())
         elif splitMethodName == DecisionTree.splitLD:
             self.splitMethod = Node.SplitHyperplane(LinearDiscriminantAnalysis())
         elif splitMethodName == DecisionTree.splitSVM:
@@ -549,6 +556,9 @@ class Node:
                 try:
                     self.classifier.fit(xAux, node.y)
                 except:
+                    tb = traceback.format_exc()
+                    print(tb, file=sys.stderr)
+                    exit(1)
                     continue
                 yPred = self.classifier.predict(xAux)
                 # each predicted class represents a future branch
