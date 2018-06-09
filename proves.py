@@ -10,6 +10,9 @@ import numpy as np
 import pandas as pd
 
 
+selectedDatasets = ["Autism-Adolescent-Data.arff", "breast.w.arff", "column2C.arff", "credit.a.arff", "diabetes.arff",
+                    "heart.statlog.arff", "hepatitis.arff", "indian_liver_patient.csv", "ionosphere.arff", "spambase.arff"]
+
 def loadCsv(path):
     df = pd.read_csv(path, sep=",", header=None, na_values='?')
     df = df.dropna()
@@ -58,9 +61,11 @@ def evalFolderDatasets():
     listFileName = [fileName for fileName in os.listdir(folder) if fileName[-5:] == ".arff" or fileName[-4:] == '.csv']
     # listSplitMethods = [DecisionTree.splitStd, DecisionTree.splitLR, DecisionTree.splitKmeans]
     # listSplitMethods = [DecisionTree.splitSVM, DecisionTree.splitSVMAdv, DecisionTree.splitLDAdv, DecisionTree.splitLRAdv]
-    listSplitMethods = [DecisionTree.splitMyLR]
+    listSplitMethods = [DecisionTree.splitLR]
 
     for fileName in listFileName[:]:
+        if fileName not in selectedDatasets:
+            continue
         X, y = readFile(folder + fileName)
 
         # meta info about the dataset (numInstances, numAttributes, nClasses...)
@@ -86,7 +91,7 @@ def evalFolderDatasets():
             print("---------------------------------------------------------------")
             print("Method:", method)
 
-            if True:
+            if False:
                 # Evaluate the classifier using 10-fold cross-validation
                 t = time.time()
                 dt = DecisionTree(splitMethodName=method, maxDepth=2)
@@ -102,10 +107,10 @@ def evalFolderDatasets():
             else:
                 # Only to evaluate the first split
                 t = time.time()
-                dt = DecisionTree(splitMethodName=method, maxDepth=2)
+                dt = DecisionTree(splitMethodName=method, maxDepth=0)
                 # dt = DecisionTreeClassifier()
                 dt.fit(X_train, y_train)
-                # dt.node.plotSplit()
+                dt.node.plotSplit()
                 pred = dt.predict(X_test)
                 acc = accuracy_score(y_test, pred)
                 prob = [pr[1] for pr in dt.predict_proba(X_test)]

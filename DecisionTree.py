@@ -302,7 +302,7 @@ class Node:
             if isinstance(self.decisionFun, self.SplitHyperplane.SplitHyperplaneDecisionFun) or \
                     isinstance(self.decisionFun, self.SplitKmeans.KmeansSplitDecisionFun):
                 plt.figure()
-                xAux = [[instance[attr] for attr in self.decisionFun.listAttr] for instance in self.X]
+                xAux = [[instance[attr] for attr in self.decisionFun.listIdxAttr] for instance in self.X]
                 x1 = [instance[0] for instance in xAux]
                 x2 = [instance[1] for instance in xAux]
                 plt.scatter(x1, x2, c=self.y, alpha=0.1, marker='o')
@@ -496,12 +496,12 @@ class Node:
 
 
         class KmeansSplitDecisionFun:
-            def __init__(self, kmeans, listAttr):
+            def __init__(self, kmeans, listIdxAttr):
                 self.kmeans = kmeans
-                self.listAttr = listAttr
+                self.listIdxAttr = listIdxAttr
 
             def apply(self, instance):
-                selectedAttr = [instance[attr] for attr in self.listAttr]
+                selectedAttr = [instance[attr] for attr in self.listIdxAttr]
                 return self.kmeans.predict([selectedAttr])[0]
 
             def getSplitLine(self):
@@ -548,7 +548,8 @@ class Node:
             self.classifier = classifier
 
         def split(self, node):
-            normX, stdDev = self._normalizeData(node.X)
+            scaler = StandardScaler().fit(node.X)
+            normX = scaler.transform(node.X)
             (bestGini, bestDecisionFun, bestDistr) = (math.inf, None, None)
             subsets = ittls.combinations(range(node.nAttr), 2)
             for idxAttr in subsets:
@@ -572,28 +573,37 @@ class Node:
                     gini = node.parentTree.splitCriteria(distrPerBranch)
                     copyLr = copy.copy(self.classifier)
                     # decisionFun = lambda x: copyLr.predict(self._takeAttr([x], idxAttr))[0]
-                    decisionFun = self.SplitHyperplaneDecisionFun(copyLr, idxAttr, stdDev)
+                    decisionFun = self.SplitHyperplaneDecisionFun(copyLr, idxAttr, scaler)
                     (bestGini, bestDecisionFun, bestDistr) = min((gini, decisionFun, distrPerBranch),
                                                                  (bestGini, bestDecisionFun, bestDistr), key=lambda x: x[0])
 
             return bestGini, node.nClassesNode, bestDecisionFun
 
         class SplitHyperplaneDecisionFun:
-            def __init__(self, classifier, listIdxAttr, stdDev):
+            def __init__(self, classifier, listIdxAttr, scaler):
                 self.classifier = classifier
                 self.listIdxAttr = listIdxAttr
-                self.stdDev = stdDev
+                self.scaler = scaler
 
             def apply(self, instance):
-                selectedAttr = [instance[idxAttr] / self.stdDev[idxAttr] for idxAttr in self.listIdxAttr]
+                scaledInstance = self.scaler.transform([instance])[0]
+                selectedAttr = [scaledInstance[idxAttr] for idxAttr in self.listIdxAttr]
                 return self.classifier.predict([selectedAttr])[0]
 
             def getSplitLine(self):
-                k1 = self.classifier.coef_[0][0]
-                k2 = self.classifier.coef_[0][1]
-                c = self.classifier.intercept_
-                m = -k1/k2
-                n = -c/k2
+                y_x0 = -self.classifier.intercept_[0] / self.classifier.coef_[0][1]
+                x_y0 = -self.classifier.intercept_[0] / self.classifier.coef_[0][0]
+
+                # trans_y_x0 = self.scaler.inverse_transform([0, y_x0])
+                # trans_x_y0 = self.scaler.inverse_transform([x_y0, 0])
+                trans_y_x0 = [self.scaler.mean_[self.listIdxAttr[0]],
+                              self.scaler.mean_[self.listIdxAttr[1]] + y_x0 * self.scaler.scale_[self.listIdxAttr[1]]]
+                trans_x_y0 = [self.scaler.mean_[self.listIdxAttr[0]] + x_y0 * self.scaler.scale_[self.listIdxAttr[0]],
+                              self.scaler.mean_[self.listIdxAttr[1]]]
+
+                m = - (trans_y_x0[1] - trans_x_y0[1]) / (trans_x_y0[0] - trans_y_x0[0])
+                n = - trans_y_x0[0] * m + trans_y_x0[1]
+
                 return m, n
 
     class SplitHyperplaneAdv(BaseSplit):

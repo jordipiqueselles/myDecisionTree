@@ -6,7 +6,9 @@ from sklearn.linear_model import LogisticRegression
 
 ## The function I will apply to z ##
 
-def invCub(z, k=1):
+origK = 0.1
+
+def invCub(z, k=origK):
     """
     It computes the inverse of f(z) = z**3 + k*z
     """
@@ -14,7 +16,7 @@ def invCub(z, k=1):
     u = auxU(z, k)
     return np.cbrt((2/3) * k) / u - u / (np.cbrt(2) * 3**(2/3))
 
-def derInvCub(z, k=1):
+def derInvCub(z, k=origK):
     """
     It computes the derivative of the inverse of f(z) = z**3 + k*z. This derivative is 1/f'(z)
     :param z:
@@ -26,12 +28,13 @@ def derInvCub(z, k=1):
 #########################################
 
 class MyLR:
-    def __init__(self, fun=invCub, derFun=derInvCub, alfa=0.15, maxIter=1000, logLevel=log.DEBUG):
+    def __init__(self, fun=invCub, derFun=derInvCub, alfa=0.15, maxIter=1000, logLevel=log.WARNING):
         self.fun = fun
         self.derFun = derFun
         self.alfa = alfa
         self.maxIter = maxIter
-        self.B = None
+        self.coef_ = None
+        self.intercept_ = None
         log.basicConfig(level=logLevel, format='%(asctime)s %(levelname)s %(message)s')
 
     def fit(self, X, y):
@@ -45,32 +48,33 @@ class MyLR:
         y = y[shuffledIdx]
         # trampa #
         # self.B = (np.mean(X*y) - np.mean(X*(1-y), axis=0)).reshape((1,3))
-        lr = LogisticRegression(C=99999999999)
+        lr = LogisticRegression(C=99999999999, fit_intercept = False)
         lr.fit(X, y.ravel())
-        self.B = lr.coef_
+        self.coef_ = lr.coef_
         ##########
         # self.B = np.random.rand(1, nAttr + 1) * 2 - 1
         self._gradientDescent(X, y)
+        self.intercept_ = [self.coef_[0][-1]]
 
     def predict(self, X):
         X = np.append(X, np.ones((len(X), 1)), axis=1)
-        return (np.dot(X, self.B.transpose()) >= 0).flatten()
+        return (np.dot(X, self.coef_.transpose()) >= 0).flatten()
 
     def predict_proba(self, X):
         X = np.append(X, np.ones((len(X), 1)), axis=1)
-        Z = np.dot(X, self.B.transpose())
+        Z = np.dot(X, self.coef_.transpose())
         funZ = self.fun(Z)
         prob = self._sigmoid(funZ)
         return prob
 
     def get_params(self, deep=True):
-        return {"fun": self.fun, "derFun": self.derFun, "alfa": self.alfa, "maxIter": self.maxIter, "B": self.B}
+        return {"fun": self.fun, "derFun": self.derFun, "alfa": self.alfa, "maxIter": self.maxIter, "B": self.coef_}
 
     def _sigmoid(self, z):
         """
         The sigmoid function (1/(1+e^-z))
         """
-        return 1 / (1 + np.exp(-z)) + 0.000001
+        return (1 / (1 + np.exp(-z)) + 0.000001) / 1.000002
 
     def _cost(self, X, y):
         """
@@ -79,7 +83,7 @@ class MyLR:
         :param y: Column vector of classes (0, 1)
         :param B: Column vector of the parameters of the Logistic Regression
         """
-        z = np.dot(X, self.B.transpose())
+        z = np.dot(X, self.coef_.transpose())
         funZ = self.fun(z)
         sig = self._sigmoid(funZ)
         return -np.dot(y.transpose(), np.log(sig)) - np.dot(1 - y.transpose(), np.log(1-sig))
@@ -92,7 +96,7 @@ class MyLR:
         :param B: Column vector of the parameters of the Logistic Regression
         """
         dz = X
-        z = np.dot(X, self.B.transpose())
+        z = np.dot(X, self.coef_.transpose())
 
         dFunZ = self.derFun(z)
         funZ = self.fun(z)
@@ -119,13 +123,13 @@ class MyLR:
             for batch in range(0, len(X), batchSize):
                 auxDerB = self._derCost(X[batch:batch + batchSize], y[batch:batch + batchSize])
                 derB = (1-beta)*derB + beta*auxDerB
-                self.B = self.B - self.alfa*derB
+                self.coef_ = self.coef_ - self.alfa * derB
 
             if i % 100 == 0:
                 cost = self._cost(X, y)
                 log.info("Iteration " + str(i))
                 log.info("Cost " + str(cost))
-                log.info("B " + str(self.B))
+                log.info("B " + str(self.coef_))
                 log.info("derB " + str(derB))
 
                 if (lastCost - cost) / cost < 0.05 or np.linalg.norm(derB) < 0.001:
