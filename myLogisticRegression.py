@@ -36,16 +36,18 @@ target = tf.placeholder(dtype=tf.float32, shape=[None, 1])
 
 # Declare the model you need to learn
 z = tf.matmul(data, A) + b  # add x^(1/3)
-mod = tf.real(tf.pow(z, tf.constant(3.0)))
-# c = tf.constant(0.5)
-# elem1 = tf.pow((2/3)*z, 1/3) / tf.pow(3**0.5 * tf.sqrt(27*tf.pow(c,2) + 4*tf.pow(z,3)) - 9*c, 1/3)
-# elem2 = tf.pow(3**0.5 * tf.sqrt(27*tf.pow(c,2) + 4*tf.pow(z,3)) - 9*c, 1/3) / (2**(1/3) * 3**(2/3))
-# mod = elem1 - elem2
+
+k = tf.constant(1.0)
+u = tf.pow(tf.sqrt(3.0) * tf.sqrt(27.0 * tf.pow(z, 2.0) + 4.0 * tf.pow(k, 3.0)) - 9.0 * z, 1 / 3)
+elem1 = tf.pow(2 / 3, 1 / 3) * k / u
+elem2 = u / (tf.pow(2.0, 1 / 3) * tf.pow(3.0, 2 / 3))
+res = elem1 - elem2
+
 
 # Declare loss function
 # Use the sigmoid cross-entropy loss function,
 # first doing a sigmoid on the model result and then using the cross-entropy loss function
-loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=mod, labels=target))
+loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(logits=res, labels=target))
 
 # Define the learning rate， batch_size etc.
 learning_rate = 0.003
@@ -60,7 +62,7 @@ goal = opt.minimize(loss)
 
 # Define the accuracy
 # The default threshold is 0.5, rounded off directly
-prediction = tf.round(tf.sigmoid(mod))
+prediction = tf.round(tf.sigmoid(res))
 # Bool into float32 type
 correct = tf.cast(tf.equal(prediction, target), dtype=tf.float32)
 # Average
