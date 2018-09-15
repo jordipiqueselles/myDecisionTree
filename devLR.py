@@ -6,7 +6,7 @@ from sklearn.linear_model import LogisticRegression
 
 ## The function I will apply to z ##
 
-origK = 0.1
+origK = 2
 
 def invCub(z, k=origK):
     """
@@ -28,7 +28,7 @@ def derInvCub(z, k=origK):
 #########################################
 
 class MyLR:
-    def __init__(self, fun=invCub, derFun=derInvCub, alfa=0.15, maxIter=1000, logLevel=log.WARNING):
+    def __init__(self, fun=invCub, derFun=derInvCub, alfa=0.01, maxIter=2000, logLevel=log.WARNING):
         self.fun = fun
         self.derFun = derFun
         self.alfa = alfa
@@ -118,7 +118,7 @@ class MyLR:
             # derB = self._derCost(X, y)
             # self.B = self.B - self.alfa * derB
 
-            batchSize = 20
+            batchSize = 50
             beta = 0.2
             for batch in range(0, len(X), batchSize):
                 auxDerB = self._derCost(X[batch:batch + batchSize], y[batch:batch + batchSize])
@@ -132,7 +132,7 @@ class MyLR:
                 log.info("B " + str(self.coef_))
                 log.info("derB " + str(derB))
 
-                if (lastCost - cost) / cost < 0.05 or np.linalg.norm(derB) < 0.001:
+                if (lastCost - cost) / cost < 0.001: # or np.linalg.norm(derB) < 0.0001:
                     log.info("Stopping at iteration " + str(i))
                     break
                 lastCost = cost
